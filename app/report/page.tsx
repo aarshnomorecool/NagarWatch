@@ -6,7 +6,7 @@ import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { getMapboxToken } from "@/lib/mapbox";
 import { createIssueEvent } from "@/lib/issue-events";
 import { findPotentialDuplicates, type DuplicateCandidate } from "@/lib/duplicate-detection";
-import { ensureUserProfile } from "@/lib/user-profile";
+import { ensureUserProfile, getCurrentUserRole } from "@/lib/user-profile";
 
 const ISSUE_IMAGE_BUCKET = "issue-images";
 
@@ -52,6 +52,12 @@ export default function ReportPage() {
       const { data } = await supabase.auth.getUser();
       if (!data.user) {
         router.replace("/login?next=/report");
+        return;
+      }
+
+      const role = await getCurrentUserRole();
+      if (role === "authority" || role === "admin") {
+        router.replace("/admin/dashboard");
       }
     };
 
@@ -189,13 +195,11 @@ export default function ReportPage() {
         }
       }
 
-      const { data: authData } = await supabase.auth.getUser();
-      if (!authData.user) {
-        throw new Error("Please sign in from the Auth page before reporting an issue.");
+      const profile = await ensureUserProfile();
+      if (!profile?.id) {
+        throw new Error("Please log in before reporting an issue.");
       }
-
-      await ensureUserProfile(authData.user);
-      const createdBy = authData.user.id;
+      const createdBy = profile.id;
 
       const fileExt = imageFile.name.split(".").pop() || "jpg";
       const fileName = `${createdBy}/${Date.now()}-${crypto.randomUUID()}.${fileExt}`;

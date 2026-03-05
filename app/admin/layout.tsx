@@ -32,7 +32,7 @@ export default function AdminLayout({
 
       setAllowed(false);
       setChecking(false);
-      router.replace("/map");
+      router.replace("/citizen/dashboard");
     };
 
     void checkRole();

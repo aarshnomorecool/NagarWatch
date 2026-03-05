@@ -1,17 +1,42 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
+import { ensureUserProfile } from "@/lib/user-profile";
+import type { UserRole } from "@/types/database";
 
 export default function SignupPage() {
+  return (
+    <Suspense fallback={<section className="mx-auto w-full max-w-md" />}>
+      <SignupPageContent />
+    </Suspense>
+  );
+}
+
+function SignupPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const roleFromQuery = searchParams?.get("role");
+  const defaultRole: UserRole = roleFromQuery === "authority" || roleFromQuery === "admin" ? "authority" : "citizen";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [selectedRole, setSelectedRole] = useState<UserRole>(defaultRole);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  const toUserMessage = (err: unknown, fallback: string) => {
+    const raw = err instanceof Error ? err.message : fallback;
+    const lower = raw.toLowerCase();
+
+    if (lower.includes("failed to fetch")) {
+      return "Network error while contacting Supabase. Please check your internet, then try again.";
+    }
+
+    return raw;
+  };
 
   const signupWithEmail = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -24,15 +49,29 @@ export default function SignupPage() {
         throw new Error("Supabase is not configured.");
       }
 
-      const { error } = await supabase.auth.signUp({ email, password });
-      if (error) {
-        throw new Error(error.message);
+      const { data: signupData, error: signupError } = await supabase.auth.signUp({ email, password });
+      if (signupError) {
+        throw new Error(signupError.message);
       }
 
-      setMessage("Signup successful. If email confirmation is enabled, confirm then login.");
-      router.push("/login");
+      if (!signupData.session) {
+        setMessage("Account created. Please confirm your email using the link sent to your inbox, then login.");
+        router.push(`/login?role=${selectedRole}`);
+        return;
+      }
+
+      let resolvedRole: UserRole = selectedRole;
+      try {
+        const profile = await ensureUserProfile({ preferredRole: selectedRole });
+        resolvedRole = profile?.role ?? selectedRole;
+      } catch {
+        // Do not block successful auth on profile sync issues.
+      }
+
+      router.push(resolvedRole === "authority" || resolvedRole === "admin" ? "/admin/dashboard" : "/citizen/dashboard");
+      router.refresh();
     } catch (caughtError) {
-      setMessage(caughtError instanceof Error ? caughtError.message : "Signup failed.");
+      setMessage(toUserMessage(caughtError, "Signup failed."));
     } finally {
       setBusy(false);
     }
@@ -51,7 +90,7 @@ export default function SignupPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/account`,
+          redirectTo: `${window.location.origin}/account?role=${selectedRole}`,
         },
       });
 
@@ -59,7 +98,7 @@ export default function SignupPage() {
         throw new Error(error.message);
       }
     } catch (caughtError) {
-      setMessage(caughtError instanceof Error ? caughtError.message : "Google signup failed.");
+      setMessage(toUserMessage(caughtError, "Google signup failed."));
       setBusy(false);
     }
   };
@@ -67,7 +106,7 @@ export default function SignupPage() {
   return (
     <section className="mx-auto w-full max-w-md space-y-4">
       <h1 className="text-2xl font-semibold text-slate-900">Create Account</h1>
-      <p className="text-sm text-slate-600">New users are created with citizen role by default.</p>
+      <p className="text-sm text-slate-600">Create a new account and start using CivicSync.</p>
 
       <form onSubmit={signupWithEmail} className="surface-card space-y-4 p-4">
         <div className="space-y-1.5">
@@ -78,6 +117,18 @@ export default function SignupPage() {
         <div className="space-y-1.5">
           <label htmlFor="password" className="text-sm font-medium text-slate-700">Password</label>
           <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="input-base" minLength={6} required />
+        </div>
+
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium text-slate-700">Choose dashboard</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setSelectedRole("citizen")} className={`rounded-md border px-3 py-2 text-sm font-medium ${selectedRole === "citizen" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 bg-white text-slate-700"}`}>
+              Citizen
+            </button>
+            <button type="button" onClick={() => setSelectedRole("authority")} className={`rounded-md border px-3 py-2 text-sm font-medium ${selectedRole === "authority" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 bg-white text-slate-700"}`}>
+              Authority
+            </button>
+          </div>
         </div>
 
         {message ? <p className="text-sm text-slate-700">{message}</p> : null}

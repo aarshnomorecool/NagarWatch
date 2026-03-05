@@ -5,6 +5,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { ensureUserProfile } from "@/lib/user-profile";
+import type { UserRole } from "@/types/database";
 
 export default function LoginPage() {
   return (
@@ -17,12 +18,38 @@ export default function LoginPage() {
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams?.get("next") ?? "/";
+  const nextPath = searchParams?.get("next");
+  const roleFromQuery = searchParams?.get("role");
+  const defaultRole: UserRole = roleFromQuery === "authority" || roleFromQuery === "admin" ? "authority" : "citizen";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [selectedRole, setSelectedRole] = useState<UserRole>(defaultRole);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  const toUserMessage = (err: unknown, fallback: string) => {
+    const raw = err instanceof Error ? err.message : fallback;
+    const lower = raw.toLowerCase();
+
+    if (lower.includes("email not confirmed")) {
+      return "Your email is not confirmed yet. Open the confirmation link from your inbox, then login again.";
+    }
+
+    if (lower.includes("failed to fetch")) {
+      return "Network error while contacting Supabase. Please check your internet, then try again.";
+    }
+
+    return raw;
+  };
+
+  const routeAfterLogin = (role: UserRole) => {
+    if (nextPath) {
+      return nextPath;
+    }
+
+    return role === "authority" || role === "admin" ? "/admin/dashboard" : "/citizen/dashboard";
+  };
 
   const loginWithEmail = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -35,20 +62,23 @@ function LoginPageContent() {
         throw new Error("Supabase is not configured.");
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         throw new Error(error.message);
       }
 
-      if (!data.user) {
-        throw new Error("No user returned from login.");
+      let resolvedRole: UserRole = selectedRole;
+      try {
+        const profile = await ensureUserProfile({ preferredRole: selectedRole });
+        resolvedRole = profile?.role ?? selectedRole;
+      } catch {
+        // Do not block successful auth on profile sync issues.
       }
 
-      await ensureUserProfile(data.user);
-      router.push(nextPath);
+      router.push(routeAfterLogin(resolvedRole));
       router.refresh();
     } catch (caughtError) {
-      setMessage(caughtError instanceof Error ? caughtError.message : "Login failed.");
+      setMessage(toUserMessage(caughtError, "Login failed."));
     } finally {
       setBusy(false);
     }
@@ -67,7 +97,7 @@ function LoginPageContent() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/account`,
+          redirectTo: `${window.location.origin}/account?role=${selectedRole}`,
         },
       });
 
@@ -75,7 +105,7 @@ function LoginPageContent() {
         throw new Error(error.message);
       }
     } catch (caughtError) {
-      setMessage(caughtError instanceof Error ? caughtError.message : "Google sign in failed.");
+      setMessage(toUserMessage(caughtError, "Google sign in failed."));
       setBusy(false);
     }
   };
@@ -83,7 +113,7 @@ function LoginPageContent() {
   return (
     <section className="mx-auto w-full max-w-md space-y-4">
       <h1 className="text-2xl font-semibold text-slate-900">Login</h1>
-      <p className="text-sm text-slate-600">Sign in to report issues, upvote, comment, and access your account.</p>
+      <p className="text-sm text-slate-600">Sign in to use your account.</p>
 
       <form onSubmit={loginWithEmail} className="surface-card space-y-4 p-4">
         <div className="space-y-1.5">
@@ -94,6 +124,18 @@ function LoginPageContent() {
         <div className="space-y-1.5">
           <label htmlFor="password" className="text-sm font-medium text-slate-700">Password</label>
           <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="input-base" required />
+        </div>
+
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium text-slate-700">Choose dashboard</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setSelectedRole("citizen")} className={`rounded-md border px-3 py-2 text-sm font-medium ${selectedRole === "citizen" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 bg-white text-slate-700"}`}>
+              Citizen
+            </button>
+            <button type="button" onClick={() => setSelectedRole("authority")} className={`rounded-md border px-3 py-2 text-sm font-medium ${selectedRole === "authority" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 bg-white text-slate-700"}`}>
+              Authority
+            </button>
+          </div>
         </div>
 
         {message ? <p className="text-sm text-red-600">{message}</p> : null}

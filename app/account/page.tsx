@@ -1,16 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { ensureUserProfile, getCurrentProfile } from "@/lib/user-profile";
 import type { UserRole } from "@/types/database";
 
 export default function AccountPage() {
+  return (
+    <Suspense fallback={<section className="surface-card mx-auto w-full max-w-md p-4 text-sm text-slate-600">Loading account...</section>}>
+      <AccountPageContent />
+    </Suspense>
+  );
+}
+
+function AccountPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [email, setEmail] = useState<string | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
   const [issueCount, setIssueCount] = useState(0);
+  const [resolvedCount, setResolvedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,31 +38,36 @@ export default function AccountPage() {
           throw new Error("Supabase is not configured.");
         }
 
-        const { data } = await supabase.auth.getUser();
-        if (!data.user) {
-          router.replace("/login?next=/account");
+        const roleQuery = searchParams?.get("role");
+        const preferredRole: UserRole | undefined = roleQuery === "authority" || roleQuery === "admin" ? "authority" : roleQuery === "citizen" ? "citizen" : undefined;
+
+        const { data: authData } = await supabase.auth.getUser();
+        if (!authData.user) {
+          router.replace("/login");
           return;
         }
 
-        await ensureUserProfile(data.user);
+        const ensuredProfile = await ensureUserProfile({ preferredRole });
         const profile = await getCurrentProfile();
+        const currentId = profile?.id ?? ensuredProfile?.id ?? authData.user.id;
 
-        const { count, error: countError } = await supabase
-          .from("issues")
-          .select("id", { head: true, count: "exact" })
-          .eq("created_by", data.user.id);
+        const [{ count: registeredCount, error: countError }, { count: resolvedTotal, error: resolvedError }] = await Promise.all([
+          supabase.from("issues").select("id", { head: true, count: "exact" }).eq("created_by", currentId),
+          supabase.from("resolutions").select("id", { head: true, count: "exact" }).eq("resolved_by", currentId),
+        ]);
 
-        if (countError) {
-          throw new Error(countError.message);
+        if (countError || resolvedError) {
+          throw new Error(countError?.message ?? resolvedError?.message ?? "Unable to load account stats.");
         }
 
         if (!active) {
           return;
         }
 
-        setEmail(profile?.email ?? data.user.email ?? null);
-        setRole(profile?.role ?? "citizen");
-        setIssueCount(count ?? 0);
+      setEmail(profile?.email ?? ensuredProfile?.email ?? authData.user.email ?? null);
+      setRole(profile?.role ?? "citizen");
+      setIssueCount(registeredCount ?? 0);
+      setResolvedCount(resolvedTotal ?? 0);
       } catch (caughtError) {
         if (!active) {
           return;
@@ -70,7 +86,7 @@ export default function AccountPage() {
     return () => {
       active = false;
     };
-  }, [router]);
+  }, [router, searchParams]);
 
   const roleLabel = useMemo(() => {
     if (!role) return "-";
@@ -86,7 +102,7 @@ export default function AccountPage() {
     }
 
     await supabase.auth.signOut();
-    router.push("/login");
+    router.push("/");
     router.refresh();
   };
 
@@ -101,7 +117,8 @@ export default function AccountPage() {
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
         <p className="text-sm text-slate-700"><span className="font-semibold">Email:</span> {email ?? "-"}</p>
         <p className="text-sm text-slate-700"><span className="font-semibold">Role:</span> {roleLabel}</p>
-        <p className="text-sm text-slate-700"><span className="font-semibold">Issues reported:</span> {issueCount}</p>
+        <p className="text-sm text-slate-700"><span className="font-semibold">Complaints registered:</span> {issueCount}</p>
+        <p className="text-sm text-slate-700"><span className="font-semibold">Complaints resolved:</span> {resolvedCount}</p>
         <button type="button" onClick={() => void logout()} className="btn-secondary w-full py-2.5">Logout</button>
       </div>
     </section>

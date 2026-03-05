@@ -77,14 +77,12 @@ export function AdminDashboard() {
         return;
       }
 
-      const { data: authData } = await supabase.auth.getUser();
-
-      if (authData.user?.id) {
-        const profile = await ensureUserProfile(authData.user);
-        setUserRole(profile?.role ?? "citizen");
+      const profile = await ensureUserProfile();
+      if (profile?.role) {
+        setUserRole(profile.role);
       } else {
         const resolvedRole = await getCurrentUserRole();
-        setUserRole(resolvedRole);
+        setUserRole(resolvedRole ?? "citizen");
       }
 
       const [issuesRes, departmentsRes, escalationsRes] = await Promise.all([
@@ -251,7 +249,7 @@ export function AdminDashboard() {
   const isAuthority = userRole === "authority" || userRole === "admin";
 
   if (!userRole) {
-    return <div className="surface-card p-4 text-sm text-amber-700">Sign in as an authority/admin from the Auth page to access dashboard actions.</div>;
+    return <div className="surface-card p-4 text-sm text-amber-700">User role is not initialized yet.</div>;
   }
 
   const updateIssueStatus = async (issueId: string, status: DbIssue["status"]) => {
@@ -328,8 +326,8 @@ export function AdminDashboard() {
         throw new Error("Supabase is not configured yet.");
       }
 
-      const { data: authData } = await supabase.auth.getUser();
-      const resolvedBy = authData.user?.id ?? issue.created_by;
+      const profile = await ensureUserProfile();
+      const resolvedBy = profile?.id ?? issue.created_by;
 
       const extension = draft.file.name.split(".").pop() || "jpg";
       const path = `${issue.id}/${Date.now()}-${crypto.randomUUID()}.${extension}`;

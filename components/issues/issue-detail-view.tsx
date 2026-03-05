@@ -59,16 +59,8 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
 
   useEffect(() => {
     const resolveUserId = async () => {
-      const supabase = getSupabaseBrowserClientOrNull();
-      const data = supabase ? (await supabase.auth.getUser()).data : { user: null };
-      if (!data.user) {
-        setCurrentUserId(null);
-        return;
-      }
-
-      await ensureUserProfile(data.user);
-      const id = data.user.id;
-      setCurrentUserId(id);
+      const profile = await ensureUserProfile();
+      setCurrentUserId(profile?.id ?? null);
     };
 
     void resolveUserId();
@@ -284,7 +276,7 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
           <button type="button" onClick={handleUpvote} disabled={!currentUserId || hasUpvoted || upvoteBusy} className="btn-primary w-full py-2.5 sm:w-auto">
             {hasUpvoted ? "Upvoted" : upvoteBusy ? "Submitting..." : "Upvote (I am affected)"}
           </button>
-          {!currentUserId ? <p className="mt-1 text-xs text-amber-700">Sign in from the Auth page to upvote.</p> : null}
+          {!currentUserId ? <p className="mt-1 text-xs text-amber-700">Login to upvote and validate this issue.</p> : null}
           <p className="mt-2 text-xs text-slate-500">Upvotes are the primary validation signal for issue prioritization.</p>
           {error ? <p className="mt-1 text-xs text-red-600">{error}</p> : null}
         </div>

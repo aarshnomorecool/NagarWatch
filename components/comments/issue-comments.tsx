@@ -54,17 +54,8 @@ export function IssueComments({ issueId }: IssueCommentsProps) {
 
   useEffect(() => {
     const initUser = async () => {
-      const supabase = getSupabaseBrowserClientOrNull();
-      const data = supabase ? (await supabase.auth.getUser()).data : { user: null };
-
-      if (!data.user) {
-        setCurrentUserId(null);
-        setCurrentUserRole("citizen");
-        return;
-      }
-
-      const profile = await ensureUserProfile(data.user);
-      setCurrentUserId(data.user.id);
+      const profile = await ensureUserProfile();
+      setCurrentUserId(profile?.id ?? null);
       if (profile?.role) {
         setCurrentUserRole(profile.role);
       }
@@ -110,7 +101,7 @@ export function IssueComments({ issueId }: IssueCommentsProps) {
       let userMap = new Map<string, Pick<DbUser, "email" | "role">>();
 
       if (uniqueUserIds.length > 0) {
-        const { data: userRows } = await supabase.from("profiles").select("id,email,role").in("id", uniqueUserIds);
+        const { data: userRows } = await supabase.from("users").select("id,email,role").in("id", uniqueUserIds);
         userMap = new Map((userRows ?? []).map((user) => [user.id, { email: user.email, role: user.role }]));
       }
 
@@ -171,17 +162,16 @@ export function IssueComments({ issueId }: IssueCommentsProps) {
         throw new Error("Supabase is not configured yet.");
       }
 
-      const { data: authData } = await supabase.auth.getUser();
-      if (!authData.user) {
-        throw new Error("Please sign in from the Auth page before commenting.");
+      const profile = await ensureUserProfile();
+      const userId = profile?.id ?? currentUserId;
+      if (!userId) {
+        throw new Error("Please log in before posting a comment.");
       }
-
-      const profile = await ensureUserProfile(authData.user);
       const userRoleForEvent = profile?.role ?? "citizen";
 
       const { error: insertError } = await supabase.from("comments").insert({
         issue_id: issueId,
-        user_id: authData.user.id,
+        user_id: userId,
         message: message.trim(),
       });
 
@@ -209,7 +199,7 @@ export function IssueComments({ issueId }: IssueCommentsProps) {
     <section className="surface-card p-4 sm:p-6">
       <h2 className="text-lg font-semibold text-slate-900">Discussion</h2>
       <p className="mt-1 text-xs text-slate-500">Comments update instantly for all viewers.</p>
-      {!currentUserId ? <p className="mt-1 text-xs text-amber-700">Sign in from the Auth page to post comments.</p> : null}
+      {!currentUserId ? <p className="mt-1 text-xs text-amber-700">Login to join this discussion.</p> : null}
 
       <form onSubmit={postComment} className="mt-4 space-y-2">
         <textarea
