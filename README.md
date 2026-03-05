@@ -1,13 +1,54 @@
-# GitHub Codespaces ♥️ Next.js
+# CivicSync
 
-Welcome to your shiny new Codespace running Next.js! We've got everything fired up and running for you to explore Next.js.
+CivicSync is a civic monitoring platform built with:
 
-You've got a blank canvas to work on from a git perspective as well. There's a single initial commit with the what you're seeing right now - where you go from here is up to you!
+- Next.js 14 (App Router)
+- TypeScript
+- Tailwind CSS
+- Supabase (`@supabase/supabase-js`)
+- Mapbox GL JS
+- Recharts
 
-Everything you do here is contained within this one codespace. There is no repository on GitHub yet. If and when you’re ready you can click "Publish Branch" and we’ll create your repository and push up your project. If you were just exploring then and have no further need for this code then you can simply delete your codespace and it's gone forever.
+## Run locally
 
-To run this application:
-
-```
+```bash
+npm install
 npm run dev
+```
+
+## Environment variables
+
+Create a `.env.local` file in the project root:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=your_mapbox_public_token
+```
+
+## Project structure
+
+```text
+app/
+	page.tsx
+	map/page.tsx
+	report/page.tsx
+	issue/[id]/page.tsx
+	admin/layout.tsx
+	admin/dashboard/page.tsx
+	admin/issues/page.tsx
+components/
+	map/
+	issues/
+	comments/
+	admin/
+	ui/
+lib/
+	supabase.ts
+	mapbox.ts
+	utils.ts
+types/
+	issue.ts
+	user.ts
+	comment.ts
 ```
