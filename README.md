@@ -52,3 +52,4 @@ types/
 	user.ts
 	comment.ts
 ```
+# civicsync-civic-app
