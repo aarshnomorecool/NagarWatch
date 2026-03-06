@@ -249,7 +249,7 @@ export function AdminDashboard() {
   const isAuthority = userRole === "authority" || userRole === "admin";
 
   if (!userRole) {
-    return <div className="surface-card p-4 text-sm text-amber-700">User role is not initialized yet.</div>;
+    return <div className="surface-card p-4 text-sm" style={{ color: "var(--primary-strong)" }}>User role is not initialized yet.</div>;
   }
 
   const updateIssueStatus = async (issueId: string, status: DbIssue["status"]) => {
@@ -379,33 +379,33 @@ export function AdminDashboard() {
   };
 
   if (loading) {
-    return <div className="surface-card p-4 text-sm text-slate-600">Loading dashboard...</div>;
+    return <div className="surface-card p-4 text-sm text-muted">Loading dashboard...</div>;
   }
 
   return (
     <div className="space-y-4">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <article className="surface-card p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Total Issues</p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">{issues.length}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted">Total Issues</p>
+          <p className="mt-2 text-2xl font-bold" style={{ color: "var(--text)" }}>{issues.length}</p>
         </article>
         <article className="surface-card p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Pending</p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">{pendingCount}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted">Pending</p>
+          <p className="mt-2 text-2xl font-bold" style={{ color: "var(--text)" }}>{pendingCount}</p>
         </article>
         <article className="surface-card p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Resolved</p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">{resolutionCount}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted">Resolved</p>
+          <p className="mt-2 text-2xl font-bold" style={{ color: "var(--text)" }}>{resolutionCount}</p>
         </article>
         <article className="surface-card p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Escalation Alerts</p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">{escalationAlerts.length}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted">Escalation Alerts</p>
+          <p className="mt-2 text-2xl font-bold" style={{ color: "var(--text)" }}>{escalationAlerts.length}</p>
         </article>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-3">
         <article className="surface-card p-4">
-          <h2 className="text-sm font-semibold text-slate-900">Issue Categories</h2>
+          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Issue Categories</h2>
           <div className="mt-4 h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -418,7 +418,7 @@ export function AdminDashboard() {
         </article>
 
         <article className="surface-card p-4">
-          <h2 className="text-sm font-semibold text-slate-900">Department Resolution Rate</h2>
+          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Department Resolution Rate</h2>
           <div className="mt-4 h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={departmentAnalytics}>
@@ -437,12 +437,12 @@ export function AdminDashboard() {
           {flaggedDepartments.length > 0 ? (
             <p className="mt-2 text-xs font-medium text-red-600">Flagged (&lt;50%): {flaggedDepartments.map((department) => department.name).join(", ")}</p>
           ) : (
-            <p className="mt-2 text-xs text-slate-500">All departments are above the 50% resolution threshold.</p>
+            <p className="mt-2 text-xs text-muted">All departments are above the 50% resolution threshold.</p>
           )}
         </article>
 
         <article className="surface-card p-4">
-          <h2 className="text-sm font-semibold text-slate-900">Escalation Alerts</h2>
+          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Escalation Alerts</h2>
           <div className="mt-4 h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={escalationAnalytics}>
@@ -458,21 +458,21 @@ export function AdminDashboard() {
       </section>
 
       <section className="surface-card p-4">
-        <h2 className="text-base font-semibold text-slate-900">Escalation Alert Feed</h2>
-        <p className="mt-1 text-xs text-slate-500">Automatic escalation: &gt;7 days ward authority, &gt;15 commissioner, &gt;30 state authority.</p>
+        <h2 className="text-base font-semibold" style={{ color: "var(--text)" }}>Escalation Alert Feed</h2>
+        <p className="mt-1 text-xs text-muted">Automatic escalation: &gt;7 days ward authority, &gt;15 commissioner, &gt;30 state authority.</p>
 
         <div className="mt-3 space-y-2">
           {escalationAlerts.slice(0, 10).map((alert) => (
-            <article key={alert.id} className="rounded-md border border-amber-200 bg-amber-50 p-3 shadow-sm">
-              <p className="text-sm font-semibold text-amber-900">{alert.issueTitle}</p>
-              <p className="mt-1 text-xs text-amber-800">
+            <article key={alert.id} className="rounded-md border p-3 shadow-sm" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--accent) 16%, var(--surface))" }}>
+              <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>{alert.issueTitle}</p>
+              <p className="mt-1 text-xs text-muted">
                 Escalation L{alert.escalation_level} → {alert.escalated_to} · {formatDate(alert.created_at)}
               </p>
             </article>
           ))}
 
           {escalationAlerts.length === 0 ? (
-            <p className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-500">No active escalation alerts.</p>
+            <p className="rounded-md border border-dashed p-4 text-sm text-muted" style={{ borderColor: "var(--border)" }}>No active escalation alerts.</p>
           ) : null}
         </div>
       </section>
@@ -480,12 +480,12 @@ export function AdminDashboard() {
       <section className="surface-card p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">All Issues</h2>
-            <p className="text-xs text-slate-500">Upvotes and pending duration are key prioritization signals.</p>
+            <h2 className="text-base font-semibold" style={{ color: "var(--text)" }}>All Issues</h2>
+            <p className="text-xs text-muted">Upvotes and pending duration are key prioritization signals.</p>
           </div>
 
           <div className="grid gap-2 sm:grid-cols-3">
-            <label className="text-xs text-slate-600">
+            <label className="text-xs text-muted">
               Category
               <select
                 value={categoryFilter}
@@ -500,7 +500,7 @@ export function AdminDashboard() {
               </select>
             </label>
 
-            <label className="text-xs text-slate-600">
+            <label className="text-xs text-muted">
               Status
               <select
                 value={statusFilter}
@@ -514,7 +514,7 @@ export function AdminDashboard() {
               </select>
             </label>
 
-            <label className="text-xs text-slate-600">
+            <label className="text-xs text-muted">
               Sort By
               <select
                 value={sortMode}
@@ -534,11 +534,11 @@ export function AdminDashboard() {
           {filteredSortedIssues.map((issue) => {
             const draft = resolutionDrafts[issue.id] ?? { note: "", file: null };
             return (
-              <article key={issue.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+              <article key={issue.id} className="rounded-lg border p-3 shadow-sm" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--bg) 92%, var(--surface))" }}>
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                   <div>
-                    <p className="text-sm font-semibold text-slate-900">{issue.title}</p>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>{issue.title}</p>
+                    <p className="mt-1 text-xs text-muted">
                       {issue.category} · Upvotes: {issue.upvote_count} · Created {formatDate(issue.created_at)} · Pending for {pendingDurationHours(issue.created_at)}h ({pendingDurationDays(issue.created_at)}d)
                     </p>
                     <span className={`mt-2 inline-block rounded-full px-2.5 py-1 text-[11px] font-semibold ${getStatusClass(issue.status)}`}>
@@ -588,7 +588,7 @@ export function AdminDashboard() {
           })}
 
           {filteredSortedIssues.length === 0 ? (
-            <p className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-500">No issues match the selected filters.</p>
+            <p className="rounded-md border border-dashed p-4 text-sm text-muted" style={{ borderColor: "var(--border)" }}>No issues match the selected filters.</p>
           ) : null}
         </div>
       </section>

@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "dev": "rm -rf .next && next",
+    "dev": "rm -rf .next .next-dev && next",
     "dev:fast": "next",
     "build": "next build",
     "start": "next start",

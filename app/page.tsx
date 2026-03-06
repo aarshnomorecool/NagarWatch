@@ -10,25 +10,39 @@ import { getCurrentUserRole } from "@/lib/user-profile";
 
 export default function HomePage() {
   const router = useRouter();
-  const [loggedIn, setLoggedIn] = useState(false);
+  const [authState, setAuthState] = useState<"checking" | "guest" | "citizen" | "authority">("checking");
 
   useEffect(() => {
+    let active = true;
     const supabase = getSupabaseBrowserClientOrNull();
     if (!supabase) {
-      setLoggedIn(false);
+      setAuthState("guest");
       return;
     }
 
     const loadSession = async () => {
       const { data } = await supabase.auth.getUser();
-      setLoggedIn(Boolean(data.user));
-
-      if (data.user) {
-        const role = await getCurrentUserRole();
-        if (role === "authority" || role === "admin") {
-          router.replace("/admin/dashboard");
-        }
+      if (!active) {
+        return;
       }
+
+      if (!data.user) {
+        setAuthState("guest");
+        return;
+      }
+
+      const role = await getCurrentUserRole();
+      if (!active) {
+        return;
+      }
+
+      if (role === "authority" || role === "admin") {
+        setAuthState("authority");
+        router.replace("/admin/dashboard");
+        return;
+      }
+
+      setAuthState("citizen");
     };
 
     void loadSession();
@@ -38,9 +52,20 @@ export default function HomePage() {
     });
 
     return () => {
+      active = false;
       subscription.subscription.unsubscribe();
     };
   }, [router]);
+
+  if (authState === "checking" || authState === "authority") {
+    return (
+      <Container>
+        <section className="surface-card p-5 text-sm text-muted">Loading your dashboard...</section>
+      </Container>
+    );
+  }
+
+  const isGuest = authState === "guest";
 
   return (
     <Container className="space-y-6">
@@ -63,7 +88,7 @@ export default function HomePage() {
           </div>
 
           <div className="grid gap-3">
-            {!loggedIn ? (
+            {isGuest ? (
               <article className="rounded-lg border border-amber-300 bg-amber-50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--primary)" }}>Launch as Citizen</p>
                 <p className="mt-1 text-sm" style={{ color: "var(--text)" }}>Track civic issues, post complaints, and vote on ongoing problems.</p>

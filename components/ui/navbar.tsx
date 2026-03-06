@@ -121,7 +121,13 @@ export function Navbar() {
 
   const isAuthority = role === "authority" || role === "admin";
 
-  const navItems: NavItem[] = isAuthority
+  const navItems: NavItem[] = loading
+    ? [
+        { href: "/", label: "Home", icon: <HomeIcon /> },
+        { href: "/map", label: "Map", icon: <MapIcon /> },
+        { href: "/login", label: "Account", icon: <UserIcon /> },
+      ]
+    : isAuthority
     ? [
         { href: "/admin/dashboard", label: "Home", icon: <HomeIcon /> },
         { href: "/map", label: "Map", icon: <MapIcon /> },
@@ -144,7 +150,7 @@ export function Navbar() {
           </Link>
           <div className="flex items-center gap-2">
             <span className="hidden text-xs font-medium uppercase tracking-wide text-muted sm:inline">Civic Monitoring</span>
-            {email ? <span className="hidden text-xs text-slate-600 md:inline">{email}{role ? ` (${role})` : ""}</span> : null}
+            {email ? <span className="hidden text-xs text-muted md:inline">{email}{role ? ` (${role})` : ""}</span> : null}
             <ThemeToggleButton iconOnly className="btn-secondary p-2" />
             {email ? (
               <button type="button" onClick={() => void signOut()} className="btn-secondary p-2" aria-label="Logout" title="Logout">
