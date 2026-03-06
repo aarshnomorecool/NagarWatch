@@ -129,10 +129,10 @@ function LoginPageContent() {
         <div className="space-y-1.5">
           <p className="text-sm font-medium text-slate-700">Choose dashboard</p>
           <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setSelectedRole("citizen")} className={`rounded-md border px-3 py-2 text-sm font-medium ${selectedRole === "citizen" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 bg-white text-slate-700"}`}>
+            <button type="button" onClick={() => setSelectedRole("citizen")} className={`btn-choice ${selectedRole === "citizen" ? "btn-choice-active" : ""}`}>
               Citizen
             </button>
-            <button type="button" onClick={() => setSelectedRole("authority")} className={`rounded-md border px-3 py-2 text-sm font-medium ${selectedRole === "authority" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 bg-white text-slate-700"}`}>
+            <button type="button" onClick={() => setSelectedRole("authority")} className={`btn-choice ${selectedRole === "authority" ? "btn-choice-active" : ""}`}>
               Authority
             </button>
           </div>

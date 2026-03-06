@@ -559,7 +559,7 @@ export function AdminDashboard() {
                       type="button"
                       disabled={busyIssueId === issue.id || issue.status === "resolved" || !isAuthority}
                       onClick={() => void submitResolution(issue)}
-                      className="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="btn-success px-3 py-1.5 text-xs"
                     >
                       Mark Resolved
                     </button>

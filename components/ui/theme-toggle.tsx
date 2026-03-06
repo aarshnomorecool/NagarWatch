@@ -1,17 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-type Theme = "light" | "dark";
-
-function applyTheme(theme: Theme) {
-  const root = document.documentElement;
-  if (theme === "dark") {
-    root.classList.add("dark");
-  } else {
-    root.classList.remove("dark");
-  }
-}
+import { initializeThemeFromStorage, setTheme as setStoredTheme, type Theme } from "@/lib/theme";
 
 export function ThemeToggle() {
   return <ThemeToggleButton />;
@@ -40,19 +30,24 @@ function MoonIcon() {
 }
 
 export function ThemeToggleButton({ iconOnly = false, className }: ThemeToggleButtonProps = {}) {
-  const [theme, setTheme] = useState<Theme>("light");
+  const [theme, setThemeState] = useState<Theme>("light");
 
   useEffect(() => {
-    const saved = (window.localStorage.getItem("civicsync_theme") as Theme | null) ?? "light";
-    setTheme(saved);
-    applyTheme(saved);
+    const { theme: savedTheme } = initializeThemeFromStorage();
+    setThemeState(savedTheme);
+
+    const onThemeChange = (event: Event) => {
+      const customEvent = event as CustomEvent<{ theme: Theme }>;
+      setThemeState(customEvent.detail.theme);
+    };
+
+    window.addEventListener("civicsync:theme-change", onThemeChange as EventListener);
+    return () => window.removeEventListener("civicsync:theme-change", onThemeChange as EventListener);
   }, []);
 
   const toggle = () => {
     const next: Theme = theme === "light" ? "dark" : "light";
-    setTheme(next);
-    applyTheme(next);
-    window.localStorage.setItem("civicsync_theme", next);
+    setStoredTheme(next);
   };
 
   return (

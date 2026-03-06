@@ -397,7 +397,7 @@ export default function ReportPage() {
             {!confirmedDuplicateOverride ? (
               <button
                 type="button"
-                className="mt-3 rounded-md bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700"
+                className="btn-warning mt-3 px-3 py-2 text-xs"
                 onClick={() => {
                   setConfirmedDuplicateOverride(true);
                   setStatusMessage("Duplicate warning acknowledged. Submit again to create a new issue.");
