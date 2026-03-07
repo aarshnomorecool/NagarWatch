@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -56,6 +57,7 @@ export function AdminDashboard() {
   const [sortMode, setSortMode] = useState<SortMode>("upvotes");
   const [resolutionDrafts, setResolutionDrafts] = useState<Record<string, ResolutionDraft>>({});
   const [busyIssueId, setBusyIssueId] = useState<string | null>(null);
+  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
@@ -88,7 +90,7 @@ export function AdminDashboard() {
       const [issuesRes, departmentsRes, escalationsRes] = await Promise.all([
         supabase
           .from("issues")
-          .select("id,title,description,category,latitude,longitude,image_url,status,created_by,created_at,upvote_count")
+          .select("id,title,description,category,road_name,landmark,area_name,latitude,longitude,image_url,status,created_by,created_at,upvote_count,downvote_count,is_priority")
           .order("created_at", { ascending: false }),
         supabase.from("departments").select("id,name,resolution_rate").order("name", { ascending: true }),
         supabase.from("escalations").select("id,issue_id,escalation_level,escalated_to,created_at"),
@@ -218,6 +220,17 @@ export function AdminDashboard() {
     return sortIssues(filtered, sortMode);
   }, [issues, categoryFilter, statusFilter, sortMode]);
 
+  useEffect(() => {
+    if (filteredSortedIssues.length === 0) {
+      setSelectedIssueId(null);
+      return;
+    }
+
+    if (!selectedIssueId || !filteredSortedIssues.some((issue) => issue.id === selectedIssueId)) {
+      setSelectedIssueId(filteredSortedIssues[0].id);
+    }
+  }, [filteredSortedIssues, selectedIssueId]);
+
   const categoryAnalytics = useMemo(() => categoryChartData(issues), [issues]);
   const escalationAnalytics = useMemo(() => escalationChartData(escalations), [escalations]);
   const departmentAnalytics: DepartmentChartDatum[] = useMemo(
@@ -247,6 +260,7 @@ export function AdminDashboard() {
   const pendingCount = useMemo(() => issues.filter((issue) => issue.status === "pending").length, [issues]);
 
   const isAuthority = userRole === "authority" || userRole === "admin";
+  const selectedIssue = selectedIssueId ? filteredSortedIssues.find((issue) => issue.id === selectedIssueId) ?? null : null;
 
   if (!userRole) {
     return <div className="surface-card p-4 text-sm" style={{ color: "var(--primary-strong)" }}>User role is not initialized yet.</div>;
@@ -531,61 +545,108 @@ export function AdminDashboard() {
         {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
 
         <div className="mt-4 space-y-3">
-          {filteredSortedIssues.map((issue) => {
-            const draft = resolutionDrafts[issue.id] ?? { note: "", file: null };
-            return (
-              <article key={issue.id} className="rounded-lg border p-3 shadow-sm" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--bg) 92%, var(--surface))" }}>
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>{issue.title}</p>
-                    <p className="mt-1 text-xs text-muted">
-                      {issue.category} · Upvotes: {issue.upvote_count} · Created {formatDate(issue.created_at)} · Pending for {pendingDurationHours(issue.created_at)}h ({pendingDurationDays(issue.created_at)}d)
-                    </p>
-                    <span className={`mt-2 inline-block rounded-full px-2.5 py-1 text-[11px] font-semibold ${getStatusClass(issue.status)}`}>
-                      {issue.status}
-                    </span>
-                  </div>
+          {filteredSortedIssues.length > 0 ? (
+            <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--border)" }}>
+              <table className="min-w-full text-sm">
+                <thead style={{ background: "color-mix(in srgb, var(--accent) 16%, transparent)" }}>
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">Issue</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">Status</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">Votes</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">Location</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">Age</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSortedIssues.map((issue) => {
+                    const selected = selectedIssueId === issue.id;
+                    return (
+                      <tr key={issue.id} style={{ background: selected ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "transparent" }}>
+                        <td className="border-t px-3 py-2 align-top" style={{ borderColor: "var(--border)" }}>
+                          <p className="font-semibold" style={{ color: "var(--text)" }}>{issue.title}</p>
+                          <p className="text-xs text-muted">{issue.category} · {formatDate(issue.created_at)}</p>
+                        </td>
+                        <td className="border-t px-3 py-2 align-top" style={{ borderColor: "var(--border)" }}>
+                          <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${getStatusClass(issue.status)}`}>
+                            {issue.status}
+                          </span>
+                        </td>
+                        <td className="border-t px-3 py-2 align-top text-xs" style={{ borderColor: "var(--border)" }}>Up {issue.upvote_count}</td>
+                        <td className="border-t px-3 py-2 align-top text-xs text-muted" style={{ borderColor: "var(--border)" }}>
+                          {[issue.area_name, issue.road_name, issue.landmark ? `Near ${issue.landmark}` : null].filter(Boolean).join(" · ") || "Location n/a"}
+                        </td>
+                        <td className="border-t px-3 py-2 align-top text-xs" style={{ borderColor: "var(--border)" }}>
+                          {pendingDurationHours(issue.created_at)}h ({pendingDurationDays(issue.created_at)}d)
+                        </td>
+                        <td className="border-t px-3 py-2 align-top" style={{ borderColor: "var(--border)" }}>
+                          <div className="flex flex-wrap gap-2">
+                            <Link href={`/issue/${issue.id}`} className="btn-secondary px-2.5 py-1 text-xs">
+                              Details
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedIssueId(issue.id)}
+                              className="btn-secondary px-2.5 py-1 text-xs"
+                            >
+                              Manage
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
 
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={busyIssueId === issue.id || issue.status === "in_progress" || !isAuthority}
-                      onClick={() => void updateIssueStatus(issue.id, "in_progress")}
-                      className="btn-secondary px-3 py-1.5 text-xs"
-                    >
-                      Mark In Progress
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busyIssueId === issue.id || issue.status === "resolved" || !isAuthority}
-                      onClick={() => void submitResolution(issue)}
-                      className="btn-success px-3 py-1.5 text-xs"
-                    >
-                      Mark Resolved
-                    </button>
-                  </div>
+          {selectedIssue ? (
+            <article className="rounded-lg border p-3" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--bg) 94%, var(--surface))" }}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>Manage Selected Issue</p>
+                  <p className="mt-1 text-xs text-muted">{selectedIssue.title}</p>
                 </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busyIssueId === selectedIssue.id || selectedIssue.status === "in_progress" || !isAuthority}
+                    onClick={() => void updateIssueStatus(selectedIssue.id, "in_progress")}
+                    className="btn-secondary px-3 py-1.5 text-xs"
+                  >
+                    Mark In Progress
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyIssueId === selectedIssue.id || selectedIssue.status === "resolved" || !isAuthority}
+                    onClick={() => void submitResolution(selectedIssue)}
+                    className="btn-success px-3 py-1.5 text-xs"
+                  >
+                    Mark Resolved
+                  </button>
+                </div>
+              </div>
 
-                <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
-                  <input
-                    type="text"
-                    value={draft.note}
-                    onChange={(event) => setDraftNote(issue.id, event.target.value)}
-                    placeholder="Resolution note"
-                    className="input-base"
-                    disabled={!isAuthority}
-                  />
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(event) => setDraftFile(issue.id, event.target.files?.[0] ?? null)}
-                    className="input-base"
-                    disabled={!isAuthority}
-                  />
-                </div>
-              </article>
-            );
-          })}
+              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                <input
+                  type="text"
+                  value={(resolutionDrafts[selectedIssue.id] ?? { note: "", file: null }).note}
+                  onChange={(event) => setDraftNote(selectedIssue.id, event.target.value)}
+                  placeholder="Resolution note"
+                  className="input-base"
+                  disabled={!isAuthority}
+                />
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => setDraftFile(selectedIssue.id, event.target.files?.[0] ?? null)}
+                  className="input-base"
+                  disabled={!isAuthority}
+                />
+              </div>
+            </article>
+          ) : null}
 
           {filteredSortedIssues.length === 0 ? (
             <p className="rounded-md border border-dashed p-4 text-sm text-muted" style={{ borderColor: "var(--border)" }}>No issues match the selected filters.</p>

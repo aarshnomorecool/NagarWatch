@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
+import { getAuthUserSafe, getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { ensureUserProfile, getCurrentProfile } from "@/lib/user-profile";
 import { initializeThemeFromStorage, setDarkPalette, type DarkPalette, type Theme } from "@/lib/theme";
 import type { UserRole } from "@/types/database";
@@ -66,15 +66,19 @@ function AccountPageContent() {
         const roleQuery = searchParams?.get("role");
         const preferredRole: UserRole | undefined = roleQuery === "authority" || roleQuery === "admin" ? "authority" : roleQuery === "citizen" ? "citizen" : undefined;
 
-        const { data: authData } = await supabase.auth.getUser();
-        if (!authData.user) {
+        const { user, error: authError } = await getAuthUserSafe();
+        if (authError) {
+          throw authError;
+        }
+
+        if (!user) {
           router.replace("/login");
           return;
         }
 
         const ensuredProfile = await ensureUserProfile({ preferredRole });
         const profile = await getCurrentProfile();
-        const currentId = profile?.id ?? ensuredProfile?.id ?? authData.user.id;
+        const currentId = profile?.id ?? ensuredProfile?.id ?? user.id;
 
         const [{ count: registeredCount, error: countError }, { count: resolvedTotal, error: resolvedError }] = await Promise.all([
           supabase.from("issues").select("id", { head: true, count: "exact" }).eq("created_by", currentId),
@@ -89,7 +93,7 @@ function AccountPageContent() {
           return;
         }
 
-      setEmail(profile?.email ?? ensuredProfile?.email ?? authData.user.email ?? null);
+      setEmail(profile?.email ?? ensuredProfile?.email ?? user.email ?? null);
       setRole(profile?.role ?? "citizen");
       setIssueCount(registeredCount ?? 0);
       setResolvedCount(resolvedTotal ?? 0);

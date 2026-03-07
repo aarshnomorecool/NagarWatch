@@ -54,16 +54,35 @@ create table if not exists public.issues (
   title text not null,
   description text not null,
   category text not null,
+  road_name text,
+  landmark text,
+  area_name text,
   latitude double precision not null,
   longitude double precision not null,
   image_url text,
   status text not null default 'pending' check (status in ('pending', 'in_progress', 'resolved')),
   created_by text not null,
   created_at timestamptz not null default now(),
-  upvote_count integer not null default 0
+  upvote_count integer not null default 0,
+  downvote_count integer not null default 0,
+  is_priority boolean not null default false
 );
 
+alter table public.issues add column if not exists downvote_count integer not null default 0;
+alter table public.issues add column if not exists is_priority boolean not null default false;
+alter table public.issues add column if not exists road_name text;
+alter table public.issues add column if not exists landmark text;
+alter table public.issues add column if not exists area_name text;
+
 create table if not exists public.upvotes (
+  id uuid primary key default gen_random_uuid(),
+  issue_id uuid not null references public.issues(id) on delete cascade,
+  user_id text not null,
+  created_at timestamptz not null default now(),
+  unique(issue_id, user_id)
+);
+
+create table if not exists public.downvotes (
   id uuid primary key default gen_random_uuid(),
   issue_id uuid not null references public.issues(id) on delete cascade,
   user_id text not null,
@@ -109,16 +128,22 @@ create unique index if not exists idx_escalations_issue_level_unique on public.e
 create table if not exists public.issue_events (
   id uuid primary key default gen_random_uuid(),
   issue_id uuid not null references public.issues(id) on delete cascade,
-  event_type text not null check (event_type in ('reported', 'upvote', 'assigned', 'in_progress', 'resolved', 'comment', 'resolution_proof')),
+  event_type text not null check (event_type in ('reported', 'upvote', 'downvote', 'priority', 'assigned', 'in_progress', 'resolved', 'comment', 'resolution_proof')),
   message text not null,
   created_by text not null check (created_by in ('citizen', 'authority', 'system')),
   created_at timestamptz not null default now()
 );
 
+alter table public.issue_events drop constraint if exists issue_events_event_type_check;
+alter table public.issue_events
+add constraint issue_events_event_type_check
+check (event_type in ('reported', 'upvote', 'downvote', 'priority', 'assigned', 'in_progress', 'resolved', 'comment', 'resolution_proof'));
+
 create index if not exists idx_issues_created_at on public.issues(created_at desc);
 create index if not exists idx_issues_status on public.issues(status);
 create index if not exists idx_comments_issue_id on public.comments(issue_id);
 create index if not exists idx_upvotes_issue_id on public.upvotes(issue_id);
+create index if not exists idx_downvotes_issue_id on public.downvotes(issue_id);
 create index if not exists idx_events_issue_id on public.issue_events(issue_id);
 create index if not exists idx_escalations_issue_id on public.escalations(issue_id);
 
@@ -154,6 +179,45 @@ create trigger trg_upvote_counter_delete
 after delete on public.upvotes
 for each row execute function public.handle_upvote_counter();
 
+-- Keep issue downvote_count and priority flag synced automatically.
+create or replace function public.handle_downvote_counter()
+returns trigger
+language plpgsql
+as $$
+declare
+  target_issue_id uuid;
+begin
+  target_issue_id := case when tg_op = 'INSERT' then new.issue_id else old.issue_id end;
+
+  update public.issues
+  set downvote_count = (
+      select count(*)::int
+      from public.downvotes
+      where issue_id = target_issue_id
+    ),
+    is_priority = (
+      (select count(*)::int from public.downvotes where issue_id = target_issue_id) > 10
+    )
+  where id = target_issue_id;
+
+  if tg_op = 'INSERT' then
+    return new;
+  end if;
+
+  return old;
+end;
+$$;
+
+drop trigger if exists trg_downvote_counter_insert on public.downvotes;
+create trigger trg_downvote_counter_insert
+after insert on public.downvotes
+for each row execute function public.handle_downvote_counter();
+
+drop trigger if exists trg_downvote_counter_delete on public.downvotes;
+create trigger trg_downvote_counter_delete
+after delete on public.downvotes
+for each row execute function public.handle_downvote_counter();
+
 -- Seed departments for dashboard charts.
 insert into public.departments(name)
 values ('pothole'), ('garbage'), ('streetlight'), ('water'), ('other')
@@ -166,6 +230,7 @@ declare
   tables text[] := array[
     'issues',
     'upvotes',
+    'downvotes',
     'comments',
     'issue_events',
     'escalations',
@@ -200,6 +265,7 @@ alter table public.users enable row level security;
 alter table public.profiles enable row level security;
 alter table public.issues enable row level security;
 alter table public.upvotes enable row level security;
+alter table public.downvotes enable row level security;
 alter table public.comments enable row level security;
 alter table public.departments enable row level security;
 alter table public.resolutions enable row level security;
@@ -227,6 +293,16 @@ begin
   end if;
   if not exists (select 1 from pg_policies where schemaname='public' and tablename='upvotes' and policyname='upvotes_delete_all') then
     create policy upvotes_delete_all on public.upvotes for delete using (true);
+  end if;
+
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='downvotes' and policyname='downvotes_select_all') then
+    create policy downvotes_select_all on public.downvotes for select using (true);
+  end if;
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='downvotes' and policyname='downvotes_insert_all') then
+    create policy downvotes_insert_all on public.downvotes for insert with check (true);
+  end if;
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='downvotes' and policyname='downvotes_delete_all') then
+    create policy downvotes_delete_all on public.downvotes for delete using (true);
   end if;
 
   if not exists (select 1 from pg_policies where schemaname='public' and tablename='comments' and policyname='comments_select_all') then

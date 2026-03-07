@@ -60,7 +60,7 @@ export function IssueMap() {
 
       const { data, error } = await supabase
         .from("issues")
-        .select("id,title,description,category,latitude,longitude,image_url,status,created_by,created_at,upvote_count")
+        .select("id,title,description,category,road_name,landmark,area_name,latitude,longitude,image_url,status,created_by,created_at,upvote_count,downvote_count,is_priority")
         .order("created_at", { ascending: false });
 
       if (isUnmounted) return;

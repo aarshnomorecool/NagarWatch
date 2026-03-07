@@ -1,6 +1,6 @@
 export type UserRole = "citizen" | "authority" | "admin";
 export type IssueStatus = "pending" | "in_progress" | "resolved";
-export type IssueEventType = "reported" | "upvote" | "assigned" | "in_progress" | "resolved" | "comment" | "resolution_proof";
+export type IssueEventType = "reported" | "upvote" | "downvote" | "priority" | "assigned" | "in_progress" | "resolved" | "comment" | "resolution_proof";
 export type IssueEventActor = "citizen" | "authority" | "system";
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
@@ -56,6 +56,9 @@ export type Database = {
           title: string;
           description: string;
           category: string;
+          road_name: string | null;
+          landmark: string | null;
+          area_name: string | null;
           latitude: number;
           longitude: number;
           image_url: string | null;
@@ -63,12 +66,17 @@ export type Database = {
           created_by: string;
           created_at: string;
           upvote_count: number;
+          downvote_count: number;
+          is_priority: boolean;
         };
         Insert: {
           id?: string;
           title: string;
           description: string;
           category: string;
+          road_name?: string | null;
+          landmark?: string | null;
+          area_name?: string | null;
           latitude: number;
           longitude: number;
           image_url?: string | null;
@@ -76,12 +84,17 @@ export type Database = {
           created_by: string;
           created_at?: string;
           upvote_count?: number;
+          downvote_count?: number;
+          is_priority?: boolean;
         };
         Update: {
           id?: string;
           title?: string;
           description?: string;
           category?: string;
+          road_name?: string | null;
+          landmark?: string | null;
+          area_name?: string | null;
           latitude?: number;
           longitude?: number;
           image_url?: string | null;
@@ -89,6 +102,8 @@ export type Database = {
           created_by?: string;
           created_at?: string;
           upvote_count?: number;
+          downvote_count?: number;
+          is_priority?: boolean;
         };
         Relationships: [];
       };
@@ -133,6 +148,27 @@ export type Database = {
           issue_id?: string;
           user_id?: string;
           message?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      downvotes: {
+        Row: {
+          id: string;
+          issue_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          issue_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          issue_id?: string;
+          user_id?: string;
           created_at?: string;
         };
         Relationships: [];
@@ -254,6 +290,7 @@ export type DbProfile = Database["public"]["Tables"]["profiles"]["Row"];
 export type DbIssue = Database["public"]["Tables"]["issues"]["Row"];
 export type DbUpvote = Database["public"]["Tables"]["upvotes"]["Row"];
 export type DbComment = Database["public"]["Tables"]["comments"]["Row"];
+export type DbDownvote = Database["public"]["Tables"]["downvotes"]["Row"];
 export type DbDepartment = Database["public"]["Tables"]["departments"]["Row"];
 export type DbResolution = Database["public"]["Tables"]["resolutions"]["Row"];
 export type DbEscalation = Database["public"]["Tables"]["escalations"]["Row"];

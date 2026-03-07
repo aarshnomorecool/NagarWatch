@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Container } from "@/components/ui/container";
 import { IssueList } from "@/components/issues/issue-list";
-import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
+import { getAuthUserSafe, getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { getCurrentUserRole } from "@/lib/user-profile";
 
 export default function HomePage() {
@@ -21,12 +21,17 @@ export default function HomePage() {
     }
 
     const loadSession = async () => {
-      const { data } = await supabase.auth.getUser();
+      const { user, error } = await getAuthUserSafe();
       if (!active) {
         return;
       }
 
-      if (!data.user) {
+      if (error) {
+        setAuthState("guest");
+        return;
+      }
+
+      if (!user) {
         setAuthState("guest");
         return;
       }

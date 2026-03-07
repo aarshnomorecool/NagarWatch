@@ -12,6 +12,8 @@ type IssueTimelineProps = {
 const eventIcons: Record<IssueEventType, string> = {
   reported: "📍",
   upvote: "👍",
+  downvote: "👎",
+  priority: "🚨",
   assigned: "🏛",
   in_progress: "🛠",
   resolved: "✅",

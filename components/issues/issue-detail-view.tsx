@@ -5,10 +5,9 @@ import { getMapboxToken } from "@/lib/mapbox";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { formatDate } from "@/lib/utils";
 import { IssueComments } from "@/components/comments/issue-comments";
-import { IssueTimeline } from "@/components/issues/IssueTimeline";
 import { createIssueEvent } from "@/lib/issue-events";
 import { ensureUserProfile } from "@/lib/user-profile";
-import type { DbIssue } from "@/types/database";
+import type { DbIssue, UserRole } from "@/types/database";
 
 type IssueDetailViewProps = {
   issueId: string;
@@ -41,11 +40,20 @@ function getStatusLabel(status: DbIssue["status"]) {
 export function IssueDetailView({ issueId }: IssueDetailViewProps) {
   const [issue, setIssue] = useState<DbIssue | null>(null);
   const [upvoteCount, setUpvoteCount] = useState(0);
+  const [commentCount, setCommentCount] = useState(0);
   const [hasUpvoted, setHasUpvoted] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null);
+  const [isEscalated, setIsEscalated] = useState(false);
+  const [stageTimes, setStageTimes] = useState<{
+    reported: string | null;
+    inProgress: string | null;
+    fixed: string | null;
+    escalated: string | null;
+  }>({ reported: null, inProgress: null, fixed: null, escalated: null });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [upvoteBusy, setUpvoteBusy] = useState(false);
+  const [voteBusy, setVoteBusy] = useState(false);
 
   const mapboxToken = useMemo(() => getMapboxToken(), []);
 
@@ -61,16 +69,13 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
     const resolveUserId = async () => {
       const profile = await ensureUserProfile();
       setCurrentUserId(profile?.id ?? null);
+      setCurrentUserRole(profile?.role ?? null);
     };
 
     void resolveUserId();
   }, []);
 
   useEffect(() => {
-    if (!currentUserId) {
-      return;
-    }
-
     let active = true;
 
     const loadIssueAndVotes = async () => {
@@ -86,7 +91,7 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
 
       const { data: issueData, error: issueError } = await supabase
         .from("issues")
-        .select("id,title,description,category,latitude,longitude,image_url,status,created_by,created_at,upvote_count")
+        .select("id,title,description,category,road_name,landmark,area_name,latitude,longitude,image_url,status,created_by,created_at,upvote_count,downvote_count,is_priority")
         .eq("id", issueId)
         .single();
 
@@ -102,9 +107,19 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
 
       setIssue(issueData);
 
-      const [{ count: totalCount }, { count: myUpvoteCount }] = await Promise.all([
+      const [{ count: totalCount }, { count: totalComments }, { data: escalationRows }, { data: stageEvents }, { count: myUpvoteCount }] = await Promise.all([
         supabase.from("upvotes").select("id", { count: "exact", head: true }).eq("issue_id", issueId),
-        supabase.from("upvotes").select("id", { count: "exact", head: true }).eq("issue_id", issueId).eq("user_id", currentUserId),
+        supabase.from("comments").select("id", { count: "exact", head: true }).eq("issue_id", issueId),
+        supabase.from("escalations").select("created_at").eq("issue_id", issueId).order("created_at", { ascending: true }),
+        supabase
+          .from("issue_events")
+          .select("event_type,created_at")
+          .eq("issue_id", issueId)
+          .in("event_type", ["reported", "in_progress", "resolved"])
+          .order("created_at", { ascending: true }),
+        currentUserId
+          ? supabase.from("upvotes").select("id", { count: "exact", head: true }).eq("issue_id", issueId).eq("user_id", currentUserId)
+          : Promise.resolve({ count: 0, error: null }),
       ]);
 
       if (!active) {
@@ -113,6 +128,19 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
 
       const safeCount = totalCount ?? issueData.upvote_count ?? 0;
       setUpvoteCount(safeCount);
+      setCommentCount(totalComments ?? 0);
+      const reportedAt = stageEvents?.find((event) => event.event_type === "reported")?.created_at ?? issueData.created_at;
+      const inProgressAt = stageEvents?.find((event) => event.event_type === "in_progress")?.created_at ?? null;
+      const fixedAt = stageEvents?.find((event) => event.event_type === "resolved")?.created_at ?? null;
+      const escalatedAt = escalationRows?.[0]?.created_at ?? null;
+
+      setStageTimes({
+        reported: reportedAt,
+        inProgress: inProgressAt,
+        fixed: fixedAt,
+        escalated: escalatedAt,
+      });
+      setIsEscalated(Boolean(escalatedAt));
       setHasUpvoted((myUpvoteCount ?? 0) > 0);
       setLoading(false);
     };
@@ -125,7 +153,7 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
     }
 
     const channel = supabase
-      .channel(`issue-upvotes-${issueId}`)
+      .channel(`issue-votes-${issueId}`)
       .on(
         "postgres_changes",
         {
@@ -137,7 +165,9 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
         async () => {
           const [{ count: totalCount }, { count: myUpvoteCount }] = await Promise.all([
             supabase.from("upvotes").select("id", { count: "exact", head: true }).eq("issue_id", issueId),
-            supabase.from("upvotes").select("id", { count: "exact", head: true }).eq("issue_id", issueId).eq("user_id", currentUserId),
+            currentUserId
+              ? supabase.from("upvotes").select("id", { count: "exact", head: true }).eq("issue_id", issueId).eq("user_id", currentUserId)
+              : Promise.resolve({ count: 0, error: null }),
           ]);
 
           if (!active) {
@@ -148,6 +178,22 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
           setHasUpvoted((myUpvoteCount ?? 0) > 0);
         }
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "comments",
+          filter: `issue_id=eq.${issueId}`,
+        },
+        async () => {
+          const { count: totalComments } = await supabase.from("comments").select("id", { count: "exact", head: true }).eq("issue_id", issueId);
+          if (!active) {
+            return;
+          }
+          setCommentCount(totalComments ?? 0);
+        }
+      )
       .subscribe();
 
     return () => {
@@ -156,12 +202,22 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
     };
   }, [currentUserId, issueId]);
 
-  const handleUpvote = async () => {
-    if (!currentUserId || !issue || hasUpvoted || upvoteBusy) {
+  const handleVote = async () => {
+    if (!currentUserId || !issue || voteBusy) {
       return;
     }
 
-    setUpvoteBusy(true);
+    if (!currentUserRole) {
+      setError("Checking account permissions. Please try again.");
+      return;
+    }
+
+    if (currentUserRole === "admin") {
+      setError("Admins cannot vote on complaints.");
+      return;
+    }
+
+    setVoteBusy(true);
     setError(null);
 
     try {
@@ -170,61 +226,68 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
         throw new Error("Supabase is not configured yet.");
       }
 
-      const { count: existingCount, error: existingError } = await supabase
-        .from("upvotes")
-        .select("id", { count: "exact", head: true })
-        .eq("issue_id", issueId)
-        .eq("user_id", currentUserId);
+      if (hasUpvoted) {
+        const { error: removeError } = await supabase.from("upvotes").delete().eq("issue_id", issueId).eq("user_id", currentUserId);
+        if (removeError) {
+          throw new Error(removeError.message);
+        }
+        setHasUpvoted(false);
+      } else {
+        const { error: insertError } = await supabase.from("upvotes").insert({ issue_id: issueId, user_id: currentUserId });
+        if (insertError) {
+          throw new Error(insertError.message);
+        }
 
-      if (existingError) {
-        throw new Error(existingError.message);
-      }
+        await createIssueEvent(supabase, {
+          issueId,
+          eventType: "upvote",
+          message: "Citizen upvoted issue",
+          createdBy: "citizen",
+        });
 
-      if ((existingCount ?? 0) > 0) {
         setHasUpvoted(true);
-        return;
       }
 
-      const { error: insertError } = await supabase.from("upvotes").insert({
-        issue_id: issueId,
-        user_id: currentUserId,
-      });
+      const { count: updatedUpvotes } = await supabase.from("upvotes").select("id", { count: "exact", head: true }).eq("issue_id", issueId);
 
-      if (insertError) {
-        throw new Error(insertError.message);
-      }
+      const finalUpvotes = updatedUpvotes ?? 0;
 
-      await createIssueEvent(supabase, {
-        issueId,
-        eventType: "upvote",
-        message: "Citizen confirmed issue",
-        createdBy: "citizen",
-      });
+      setUpvoteCount(finalUpvotes);
+      setIssue((previous) => (previous ? { ...previous, upvote_count: finalUpvotes } : previous));
 
-      const { count: updatedCount, error: countError } = await supabase
-        .from("upvotes")
-        .select("id", { count: "exact", head: true })
-        .eq("issue_id", issueId);
+      const { error: syncError } = await supabase
+        .from("issues")
+        .update({ upvote_count: finalUpvotes })
+        .eq("id", issueId);
 
-      if (countError) {
-        throw new Error(countError.message);
-      }
-
-      const finalCount = updatedCount ?? upvoteCount + 1;
-      setUpvoteCount(finalCount);
-      setHasUpvoted(true);
-
-      const { error: syncError } = await supabase.from("issues").update({ upvote_count: finalCount }).eq("id", issueId);
       if (syncError) {
-        console.warn("Upvote count sync warning", syncError.message);
+        console.warn("Vote counter sync warning", syncError.message);
       }
+
     } catch (caughtError) {
-      const message = caughtError instanceof Error ? caughtError.message : "Could not complete upvote.";
+      const message = caughtError instanceof Error ? caughtError.message : "Could not update vote.";
       setError(message);
     } finally {
-      setUpvoteBusy(false);
+      setVoteBusy(false);
     }
   };
+
+  function UpvoteIcon() {
+    return (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="m6 14 6-6 6 6" />
+        <path d="M12 19V9" />
+      </svg>
+    );
+  }
+
+  function CommentIcon() {
+    return (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 4c-4.97 0-9 3.58-9 8 0 2.2 1 4.2 2.7 5.6L5 21l3.8-1.5c1 .3 2.1.5 3.2.5 4.97 0 9-3.58 9-8s-4.03-8-9-8Z" />
+      </svg>
+    );
+  }
 
   if (loading) {
     return (
@@ -250,6 +313,24 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
     );
   }
 
+  const currentStage: "reported" | "in_progress" | "fixed" | "escalated" =
+    issue.status === "resolved"
+      ? "fixed"
+      : issue.status === "in_progress"
+      ? "in_progress"
+      : isEscalated
+      ? "escalated"
+      : "reported";
+
+  const currentStageInfo =
+    currentStage === "reported"
+      ? { label: "Citizen reported issue", timestamp: stageTimes.reported ?? issue.created_at }
+      : currentStage === "in_progress"
+      ? { label: "Problem under process", timestamp: stageTimes.inProgress }
+      : currentStage === "fixed"
+      ? { label: "Problem fixed", timestamp: stageTimes.fixed }
+      : { label: "Escalated", timestamp: stageTimes.escalated };
+
   return (
     <section className="mx-auto w-full max-w-3xl space-y-4">
       <div className="surface-card p-4 sm:p-6">
@@ -257,8 +338,8 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
 
         <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">{issue.title}</h1>
-            <p className="mt-2 text-sm text-slate-600">{issue.description}</p>
+            <h1 className="text-2xl font-semibold" style={{ color: "var(--text)" }}>{issue.title}</h1>
+            <p className="mt-2 text-sm text-muted">{issue.description}</p>
           </div>
           <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-center sm:min-w-44">
             <p className="text-xs font-medium uppercase tracking-wide text-blue-700">Affected Citizens</p>
@@ -268,16 +349,38 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
 
         <div className="mt-4 flex flex-wrap gap-2">
           <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getStatusBadge(issue.status)}`}>{getStatusLabel(issue.status)}</span>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{issue.category}</span>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Created {formatDate(issue.created_at)}</span>
+          <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "color-mix(in srgb, var(--accent) 18%, transparent)", color: "var(--text)" }}>{issue.category}</span>
+          <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "color-mix(in srgb, var(--accent) 18%, transparent)", color: "var(--text)" }}>Created {formatDate(issue.created_at)}</span>
         </div>
 
-        <div className="mt-4">
-          <button type="button" onClick={handleUpvote} disabled={!currentUserId || hasUpvoted || upvoteBusy} className="btn-primary w-full py-2.5 sm:w-auto">
-            {hasUpvoted ? "Upvoted" : upvoteBusy ? "Submitting..." : "Upvote (I am affected)"}
-          </button>
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {currentUserRole !== "citizen" && currentUserRole !== "authority" ? (
+              <span className="btn-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-sm">
+                <UpvoteIcon /> {upvoteCount}
+              </span>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void handleVote()}
+                  disabled={!currentUserId || voteBusy}
+                  className="btn-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-sm"
+                  style={hasUpvoted ? { borderColor: "#16a34a", background: "rgba(22,163,74,0.15)", color: "#16a34a" } : undefined}
+                >
+                  <UpvoteIcon /> {upvoteCount}
+                </button>
+              </>
+            )}
+
+            <a href="#issue-comments" className="btn-secondary inline-flex items-center gap-1.5 px-3 py-1.5 text-sm">
+              <CommentIcon /> {commentCount}
+            </a>
+          </div>
+
           {!currentUserId ? <p className="mt-1 text-xs text-amber-700">Login to upvote and validate this issue.</p> : null}
-          <p className="mt-2 text-xs text-slate-500">Upvotes are the primary validation signal for issue prioritization.</p>
+          {currentUserRole === "admin" ? <p className="mt-1 text-xs text-muted">Admin accounts have read-only access to vote counters.</p> : null}
+          <p className="mt-2 text-xs text-slate-500">Upvotes are a public validation signal for issue visibility.</p>
           {error ? <p className="mt-1 text-xs text-red-600">{error}</p> : null}
         </div>
       </div>
@@ -302,9 +405,23 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
         <p className="mt-2 text-xs text-slate-600">
           Latitude: {issue.latitude.toFixed(6)} · Longitude: {issue.longitude.toFixed(6)}
         </p>
+        <p className="mt-1 text-xs text-slate-600">
+          {[issue.area_name, issue.road_name, issue.landmark ? `Near ${issue.landmark}` : null].filter(Boolean).join(" · ") || "Area details not provided"}
+        </p>
       </div>
 
-      <IssueTimeline issueId={issueId} />
+      <div className="surface-card p-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Issue Progress</h2>
+        <div className="mt-3 relative pl-6">
+          <span className="absolute left-0 top-0 text-xs" style={{ color: "var(--primary)" }} aria-hidden="true">-&gt;</span>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: "var(--primary)" }}>
+              {currentStageInfo.label} (current)
+            </p>
+            <p className="text-xs text-muted">{currentStageInfo.timestamp ? formatDate(currentStageInfo.timestamp) : "Timestamp unavailable"}</p>
+          </div>
+        </div>
+      </div>
 
       <IssueComments issueId={issueId} />
     </section>

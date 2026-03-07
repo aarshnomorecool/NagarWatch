@@ -1,5 +1,5 @@
 import type { Database, UserRole } from "@/types/database";
-import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
+import { getAuthUserSafe, getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 
 export type ProfileRow = Database["public"]["Tables"]["users"]["Row"];
 type EnsureProfileOptions = {
@@ -35,15 +35,15 @@ export async function getCurrentProfile() {
     return null;
   }
 
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError || !authData.user) {
+  const { user, error: authError } = await getAuthUserSafe();
+  if (authError || !user) {
     return null;
   }
 
   const { data, error } = await supabase
     .from("users")
     .select("id,email,role,created_at")
-    .eq("id", authData.user.id)
+    .eq("id", user.id)
     .single();
 
   if (error) {
@@ -59,12 +59,12 @@ export async function requireCurrentUser() {
     throw new Error("Supabase is not configured.");
   }
 
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) {
+  const { user, error } = await getAuthUserSafe();
+  if (error || !user) {
     throw new Error("Please log in.");
   }
 
-  return data.user;
+  return user;
 }
 
 export async function getCurrentUserRole(): Promise<UserRole | null> {
@@ -89,13 +89,13 @@ export async function ensureUserProfile(options: EnsureProfileOptions = {}) {
     rememberRole(preferredRole);
   }
 
-  const { data: authData, error: authError } = await supabase.auth.getUser();
-  if (authError || !authData.user) {
+  const { user: authUser, error: authError } = await getAuthUserSafe();
+  if (authError || !authUser) {
     return null;
   }
 
-  const id = authData.user.id;
-  const email = authData.user.email ?? `${id}@civicsync.local`;
+  const id = authUser.id;
+  const email = authUser.email ?? `${id}@civicsync.local`;
   const role: UserRole = preferredRole ?? "citizen";
 
   const { data: existing } = await supabase

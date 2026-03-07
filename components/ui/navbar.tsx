@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ThemeToggleButton } from "@/components/ui/theme-toggle";
-import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
+import { getAuthUserSafe, getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { ensureUserProfile } from "@/lib/user-profile";
 import type { UserRole } from "@/types/database";
 
@@ -79,8 +79,8 @@ export function Navbar() {
         return;
       }
 
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) {
+      const { user } = await getAuthUserSafe();
+      if (!user) {
         setEmail(null);
         setRole(null);
         setLoading(false);
@@ -88,7 +88,7 @@ export function Navbar() {
       }
 
       const profile = await ensureUserProfile();
-      setEmail(profile?.email ?? data.user.email ?? null);
+      setEmail(profile?.email ?? user.email ?? null);
       setRole(profile?.role ?? "citizen");
       setLoading(false);
     };

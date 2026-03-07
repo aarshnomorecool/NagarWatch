@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
+import { getAuthUserSafe, getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { getMapboxToken } from "@/lib/mapbox";
 import { createIssueEvent } from "@/lib/issue-events";
 import { findPotentialDuplicates, type DuplicateCandidate } from "@/lib/duplicate-detection";
@@ -49,8 +49,8 @@ export default function ReportPage() {
         return;
       }
 
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) {
+      const { user } = await getAuthUserSafe();
+      if (!user) {
         router.replace("/login?next=/report");
         return;
       }
@@ -170,7 +170,7 @@ export default function ReportPage() {
       if (!confirmedDuplicateOverride) {
         const { data: existingIssues, error: existingIssuesError } = await supabase
           .from("issues")
-          .select("id,title,description,category,latitude,longitude,image_url,status,created_by,created_at,upvote_count")
+          .select("id,title,description,category,road_name,landmark,area_name,latitude,longitude,image_url,status,created_by,created_at,upvote_count,downvote_count,is_priority")
           .neq("status", "resolved")
           .order("created_at", { ascending: false })
           .limit(200);

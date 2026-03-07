@@ -27,7 +27,7 @@ export function pendingDurationDays(createdAt: string) {
 }
 
 export function escalationRuleForIssue(issue: DbIssue) {
-  if (issue.status !== "pending") {
+  if (issue.status === "resolved") {
     return null;
   }
 

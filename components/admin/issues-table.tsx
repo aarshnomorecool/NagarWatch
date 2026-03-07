@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { formatDate } from "@/lib/utils";
@@ -26,7 +27,7 @@ export function IssuesTable() {
 
       const { data, error: fetchError } = await supabase
         .from("issues")
-        .select("id,title,description,category,latitude,longitude,image_url,status,created_by,created_at,upvote_count")
+        .select("id,title,description,category,road_name,landmark,area_name,latitude,longitude,image_url,status,created_by,created_at,upvote_count,downvote_count,is_priority")
         .order("created_at", { ascending: false });
 
       if (!active) return;
@@ -69,9 +70,11 @@ export function IssuesTable() {
             <tr>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">Issue</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">Category</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">Location</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">Status</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">Upvotes</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">Created</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y" style={{ borderColor: "var(--border)" }}>
@@ -82,9 +85,15 @@ export function IssuesTable() {
                   <p className="text-xs text-muted">{issue.id}</p>
                 </td>
                 <td className="px-4 py-3 text-sm">{issue.category}</td>
+                <td className="px-4 py-3 text-sm text-muted">{[issue.area_name, issue.road_name, issue.landmark ? `Near ${issue.landmark}` : null].filter(Boolean).join(" · ") || "-"}</td>
                 <td className="px-4 py-3 text-sm">{issue.status}</td>
                 <td className="px-4 py-3 text-sm">{issue.upvote_count}</td>
                 <td className="px-4 py-3 text-sm">{formatDate(issue.created_at)}</td>
+                <td className="px-4 py-3 text-sm">
+                  <Link href={`/issue/${issue.id}`} className="btn-secondary px-3 py-1.5 text-xs">
+                    Details
+                  </Link>
+                </td>
               </tr>
             ))}
           </tbody>
