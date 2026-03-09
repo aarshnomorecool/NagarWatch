@@ -10,6 +10,7 @@ export default function CitizenDashboardPage() {
         <p className="mt-2 text-sm" style={{ color: "var(--muted)" }}>Report a new complaint, track nearby issues, and vote on what should be prioritized.</p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Link href="/report" className="btn-primary">Report New Issue</Link>
+          <Link href="/citizen/reports" className="btn-secondary">My Reports</Link>
           <Link href="/map" className="btn-secondary">Open Live Map</Link>
         </div>
       </header>

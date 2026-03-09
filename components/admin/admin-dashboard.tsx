@@ -18,7 +18,7 @@ import {
 import { formatDate } from "@/lib/utils";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { createIssueEvent } from "@/lib/issue-events";
-import { notifyIssueFollowers } from "@/lib/notifications";
+import { notifyIssueFollowers, notifyIssueOwner } from "@/lib/notifications";
 import { ensureUserProfile, getCurrentUserRole, readRememberedAuthorityLevel } from "@/lib/user-profile";
 import {
   categoryChartData,
@@ -31,6 +31,7 @@ import {
 } from "@/lib/admin-dashboard";
 import { getSlaState } from "@/lib/sla";
 import { canManageIssueByAuthority } from "@/lib/authority";
+import { authorityLevelLabel, escalationLevelLabel } from "@/lib/authority-display";
 import type { DbDepartment, DbEscalation, DbIssue, UserRole } from "@/types/database";
 
 type SortMode = "upvotes" | "pending_duration";
@@ -367,6 +368,14 @@ export function AdminDashboard() {
           title: "Issue under process",
           body: "Authority has started work on this issue.",
         });
+
+        await notifyIssueOwner(supabase, {
+          userId: issue.created_by,
+          issueId,
+          notificationType: "issue_authority_changed",
+          title: "Issue moved to processing",
+          body: `Your issue \"${issue.title}\" is now under process at ${issue.assigned_authority_level} authority.`,
+        });
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not update issue status.");
@@ -470,6 +479,14 @@ export function AdminDashboard() {
         body: `${issue.title} was marked as resolved with proof uploaded.`,
       });
 
+      await notifyIssueOwner(supabase, {
+        userId: issue.created_by,
+        issueId: issue.id,
+        notificationType: "issue_resolved",
+        title: "Issue resolved",
+        body: `Your issue \"${issue.title}\" has been resolved.`,
+      });
+
       setResolutionDrafts((prev) => ({
         ...prev,
         [issue.id]: { note: "", file: null },
@@ -566,11 +583,11 @@ export function AdminDashboard() {
 
         <div className="mt-3 space-y-2">
           {escalationAlerts.slice(0, 10).map((alert) => (
-            <article key={alert.id} className="rounded-md border p-3 shadow-sm" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--accent) 16%, var(--surface))" }}>
+            <article key={alert.id} className="rounded-md border p-3" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--accent) 12%, var(--surface))" }}>
               <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>{alert.issueTitle}</p>
-              <p className="mt-1 text-xs text-muted">
-                Escalation L{alert.escalation_level} → {alert.escalated_to} · {formatDate(alert.created_at)}
-              </p>
+              <p className="mt-1 text-xs text-muted">Escalated To: {authorityLevelLabel(alert.escalated_to_level)}</p>
+              <p className="mt-1 text-xs text-muted">Escalation Level: {escalationLevelLabel(alert.escalated_to_level)}</p>
+              <p className="mt-1 text-xs text-muted">Escalation Time: {formatDate(alert.created_at)}</p>
             </article>
           ))}
 

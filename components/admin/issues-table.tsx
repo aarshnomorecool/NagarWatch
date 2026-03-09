@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createIssueEvent } from "@/lib/issue-events";
-import { notifyIssueFollowers } from "@/lib/notifications";
+import { notifyIssueFollowers, notifyIssueOwner } from "@/lib/notifications";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { ensureUserProfile, getCurrentUserRole, readRememberedAuthorityLevel } from "@/lib/user-profile";
 import { getSlaState } from "@/lib/sla";
 import { formatDate } from "@/lib/utils";
 import { canManageIssueByAuthority } from "@/lib/authority";
+import { authorityLevelLabel } from "@/lib/authority-display";
 import type { AuthorityLevel, DbIssue, UserRole } from "@/types/database";
 
 type ResolutionDraft = {
@@ -223,6 +224,14 @@ export function IssuesTable() {
           title: "Issue under process",
           body: "Authority has started work on this issue.",
         });
+
+        await notifyIssueOwner(supabase, {
+          userId: issue.created_by,
+          issueId,
+          notificationType: "issue_authority_changed",
+          title: "Issue moved to processing",
+          body: `Your issue \"${issue.title}\" is now under process at ${issue.assigned_authority_level} authority.`,
+        });
       }
 
       setIssues((current) => current.map((issue) => (issue.id === issueId ? { ...issue, status } : issue)));
@@ -318,6 +327,14 @@ export function IssuesTable() {
         body: `${selectedIssue.title} was marked as resolved with proof uploaded.`,
       });
 
+      await notifyIssueOwner(supabase, {
+        userId: selectedIssue.created_by,
+        issueId: selectedIssue.id,
+        notificationType: "issue_resolved",
+        title: "Issue resolved",
+        body: `Your issue \"${selectedIssue.title}\" has been resolved.`,
+      });
+
       setIssues((current) => current.map((issue) => (issue.id === selectedIssue.id ? { ...issue, status: "resolved" } : issue)));
       setResolutionDraft({ note: "", file: null });
     } catch (caughtError) {
@@ -362,6 +379,7 @@ export function IssuesTable() {
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">Category</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">Location</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">Handling Authority</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">Upvotes</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">SLA</th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted">Created</th>
@@ -392,6 +410,7 @@ export function IssuesTable() {
                     {statusTone.label}
                   </span>
                 </td>
+                <td className="px-4 py-3 text-sm">{authorityLevelLabel(issue.assigned_authority_level)}</td>
                 <td className="px-4 py-3 text-sm">{issue.upvote_count}</td>
                 <td className="px-4 py-3 text-sm">
                   {issue.status === "resolved" && resolvedAt ? (
@@ -435,7 +454,7 @@ export function IssuesTable() {
             ))}
             {pagedIssues.length === 0 ? (
               <tr>
-                <td className="px-4 py-6 text-center text-sm text-muted" colSpan={8}>
+                <td className="px-4 py-6 text-center text-sm text-muted" colSpan={9}>
                   No complaints found for the current filter.
                 </td>
               </tr>

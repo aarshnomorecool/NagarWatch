@@ -9,6 +9,14 @@ type NotifyFollowersInput = {
   body: string;
 };
 
+type NotifyOwnerInput = {
+  userId: string;
+  issueId: string;
+  notificationType: string;
+  title: string;
+  body: string;
+};
+
 export async function notifyIssueFollowers(supabase: SupabaseClient<Database>, input: NotifyFollowersInput) {
   const { data: followers, error: followError } = await supabase
     .from("issue_follows")
@@ -36,5 +44,20 @@ export async function notifyIssueFollowers(supabase: SupabaseClient<Database>, i
   const { error: insertError } = await supabase.from("notifications").insert(rows);
   if (insertError) {
     console.error("Failed to insert follower notifications", insertError);
+  }
+}
+
+export async function notifyIssueOwner(supabase: SupabaseClient<Database>, input: NotifyOwnerInput) {
+  const row: Database["public"]["Tables"]["notifications"]["Insert"] = {
+    user_id: input.userId,
+    issue_id: input.issueId,
+    notification_type: input.notificationType,
+    title: input.title,
+    body: input.body,
+  };
+
+  const { error } = await supabase.from("notifications").insert(row);
+  if (error) {
+    console.error("Failed to insert owner notification", error);
   }
 }

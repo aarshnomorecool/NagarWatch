@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { escalationRuleForIssue } from "@/lib/admin-dashboard";
+import { authorityLevelLabel } from "@/lib/authority-display";
 import type { Database, DbIssue } from "@/types/database";
 
 function getServiceClient() {
@@ -57,7 +58,7 @@ async function runEscalations() {
   const [{ data: issues, error: issuesError }, { data: escalations, error: escalationsError }] = await Promise.all([
     serviceClient
       .from("issues")
-      .select("id,status,created_at,assigned_authority_level,escalation_level")
+      .select("id,title,created_by,status,created_at,assigned_authority_level,escalation_level")
       .neq("status", "resolved"),
     serviceClient.from("escalations").select("issue_id,escalation_level"),
   ]);
@@ -72,7 +73,7 @@ async function runEscalations() {
     return acc;
   }, {});
 
-  const escalationInserts = ((issues ?? []) as Pick<DbIssue, "id" | "status" | "created_at" | "assigned_authority_level" | "escalation_level">[])
+  const escalationInserts = ((issues ?? []) as Pick<DbIssue, "id" | "title" | "created_by" | "status" | "created_at" | "assigned_authority_level" | "escalation_level">[])
     .reduce<Database["public"]["Tables"]["escalations"]["Insert"][]>((acc, issue) => {
       const rule = escalationRuleForIssue(issue as DbIssue);
       if (!rule) {
@@ -122,6 +123,31 @@ async function runEscalations() {
   const updateError = updateResults.find((result) => result.error)?.error;
   if (updateError) {
     throw new Error(updateError.message);
+  }
+
+  const issueMap = new Map((issues ?? []).map((issue) => [issue.id, issue]));
+  const notificationRows: Database["public"]["Tables"]["notifications"]["Insert"][] = escalationInserts
+    .map((entry) => {
+      const issue = issueMap.get(entry.issue_id);
+      if (!issue) {
+        return null;
+      }
+
+      return {
+        user_id: issue.created_by,
+        issue_id: issue.id,
+        notification_type: "issue_escalated",
+        title: "Issue escalated",
+        body: `Your issue \"${issue.title}\" has been escalated to ${authorityLevelLabel(entry.escalated_to_level)}.`,
+      };
+    })
+    .filter(Boolean) as Database["public"]["Tables"]["notifications"]["Insert"][];
+
+  if (notificationRows.length > 0) {
+    const { error: notificationError } = await serviceClient.from("notifications").insert(notificationRows);
+    if (notificationError) {
+      throw new Error(notificationError.message);
+    }
   }
 
   return { inserted: escalationInserts.length, updated: escalationInserts.length };

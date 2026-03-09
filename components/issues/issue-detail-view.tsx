@@ -9,6 +9,7 @@ import { createIssueEvent } from "@/lib/issue-events";
 import { notifyIssueFollowers } from "@/lib/notifications";
 import { getSlaState } from "@/lib/sla";
 import { ensureUserProfile } from "@/lib/user-profile";
+import { authorityLevelLabel, escalationLevelLabel } from "@/lib/authority-display";
 import type { DbIssue, DbResolution, UserRole } from "@/types/database";
 
 type IssueDetailViewProps = {
@@ -610,6 +611,12 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
             SLA: {slaState.label}
           </span>
           <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "color-mix(in srgb, var(--accent) 18%, transparent)", color: "var(--text)" }}>{issue.category}</span>
+          <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "color-mix(in srgb, var(--accent) 18%, transparent)", color: "var(--text)" }}>
+            Handling Authority: {authorityLevelLabel(issue.assigned_authority_level)}
+          </span>
+          <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "color-mix(in srgb, var(--accent) 18%, transparent)", color: "var(--text)" }}>
+            Escalation Level: {escalationLevelLabel(issue.assigned_authority_level)}
+          </span>
           <span className="rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "color-mix(in srgb, var(--accent) 18%, transparent)", color: "var(--text)" }}>Created {formatDate(issue.created_at)}</span>
         </div>
 
