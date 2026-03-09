@@ -133,7 +133,12 @@ export function RolesManager() {
       setRole("authority");
       setAuthorityLevel("ward");
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Failed to save role.");
+      const message = caughtError instanceof Error ? caughtError.message : "Failed to save role.";
+      if (message.includes("SUPABASE_SERVICE_ROLE_KEY") || message.includes("NEXT_PUBLIC_SUPABASE_URL") || message.includes("SUPABASE_URL")) {
+        setError("Server env is missing. Add SUPABASE_SERVICE_ROLE_KEY (and Supabase URL) to deployment env, then redeploy.");
+      } else {
+        setError(message);
+      }
     } finally {
       setSaving(false);
     }

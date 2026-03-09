@@ -24,7 +24,6 @@ import {
   categoryChartData,
   computeDepartmentResolutionRates,
   escalationChartData,
-  escalationRuleForIssue,
   pendingDurationDays,
   pendingDurationHours,
   sortIssues,
@@ -32,7 +31,7 @@ import {
 } from "@/lib/admin-dashboard";
 import { getSlaState } from "@/lib/sla";
 import { canManageIssueByAuthority } from "@/lib/authority";
-import type { Database, DbDepartment, DbEscalation, DbIssue, UserRole } from "@/types/database";
+import type { DbDepartment, DbEscalation, DbIssue, UserRole } from "@/types/database";
 
 type SortMode = "upvotes" | "pending_duration";
 
@@ -40,8 +39,6 @@ type ResolutionDraft = {
   note: string;
   file: File | null;
 };
-
-type EscalationInsert = Database["public"]["Tables"]["escalations"]["Insert"];
 
 const RESOLUTION_BUCKET = "resolution-proofs";
 
@@ -140,6 +137,25 @@ export function AdminDashboard() {
         setUserAuthorityLevel(readRememberedAuthorityLevel());
       }
 
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session?.access_token) {
+        const escalationRunResponse = await fetch("/api/system/run-escalations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+
+        if (!escalationRunResponse.ok) {
+          const escalationRunError = (await escalationRunResponse.json().catch(() => null)) as { error?: string } | null;
+          setError(escalationRunError?.error || "Automatic escalation runner failed.");
+        }
+      }
+
       const [issuesRes, departmentsRes, escalationsRes, resolutionsRes] = await Promise.all([
         supabase
           .from("issues")
@@ -168,58 +184,6 @@ export function AdminDashboard() {
 
         return acc;
       }, {});
-
-      const escalationMaxByIssue = loadedEscalations.reduce<Record<string, number>>((acc, escalation) => {
-        const current = acc[escalation.issue_id] ?? 0;
-        acc[escalation.issue_id] = Math.max(current, escalation.escalation_level);
-        return acc;
-      }, {});
-
-      const escalationInserts = loadedIssues.reduce<EscalationInsert[]>((acc, issue) => {
-          const rule = escalationRuleForIssue(issue);
-          if (!rule) {
-            return acc;
-          }
-
-          const existingLevel = escalationMaxByIssue[issue.id] ?? 0;
-          if (existingLevel >= rule.escalation_level) {
-            return acc;
-          }
-
-          acc.push({
-            issue_id: issue.id,
-            escalation_level: rule.escalation_level,
-            escalated_to: rule.escalated_to,
-            escalated_to_level: rule.escalated_to_level,
-          });
-
-          return acc;
-        }, []);
-
-      if (escalationInserts.length > 0) {
-        const { error: insertEscalationError } = await supabase.from("escalations").insert(escalationInserts);
-        if (insertEscalationError) {
-          setError(insertEscalationError.message);
-        } else {
-          await Promise.all(
-            escalationInserts.map((entry) =>
-              supabase
-                .from("issues")
-                .update({
-                  assigned_authority_level: entry.escalated_to_level,
-                  escalation_level: entry.escalation_level,
-                  last_escalated_at: new Date().toISOString(),
-                })
-                .eq("id", entry.issue_id),
-            ),
-          );
-
-          const { data: refreshedEscalations } = await supabase
-            .from("escalations")
-            .select("id,issue_id,escalation_level,escalated_to,escalated_to_level,created_at");
-          loadedEscalations = refreshedEscalations ?? loadedEscalations;
-        }
-      }
 
       const computedRates = computeDepartmentResolutionRates(loadedIssues, loadedDepartments);
       const rateUpdates = computedRates
@@ -598,7 +562,7 @@ export function AdminDashboard() {
 
       <section className="surface-card p-4">
         <h2 className="text-base font-semibold" style={{ color: "var(--text)" }}>Escalation Alert Feed</h2>
-        <p className="mt-1 text-xs text-muted">Automatic escalation: &gt;7 days ward authority, &gt;15 commissioner, &gt;30 state authority.</p>
+        <p className="mt-1 text-xs text-muted">Automatic escalation: &gt;24h ward -&gt; zone, &gt;48h zone -&gt; city, &gt;72h city -&gt; state.</p>
 
         <div className="mt-3 space-y-2">
           {escalationAlerts.slice(0, 10).map((alert) => (
