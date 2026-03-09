@@ -1,12 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { ensureUserProfile } from "@/lib/user-profile";
 
 export default function CitizenLoginPage() {
+  return (
+    <Suspense fallback={<section className="mx-auto w-full max-w-md" />}>
+      <CitizenLoginPageContent />
+    </Suspense>
+  );
+}
+
+function CitizenLoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams?.get("next");

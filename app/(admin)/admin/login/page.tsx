@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { ensureUserProfile } from "@/lib/user-profile";
@@ -15,6 +15,14 @@ const authorityLevels: Array<{ value: AuthorityLevel; label: string }> = [
 ];
 
 export default function AdminLoginPage() {
+  return (
+    <Suspense fallback={<section className="mx-auto w-full max-w-md" />}>
+      <AdminLoginPageContent />
+    </Suspense>
+  );
+}
+
+function AdminLoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams?.get("next");
