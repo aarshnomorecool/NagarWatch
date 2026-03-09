@@ -11,6 +11,15 @@ type EnsureProfileOptions = {
 const ROLE_STORAGE_KEY = "nagarwatch_preferred_role";
 const AUTHORITY_LEVEL_STORAGE_KEY = "nagarwatch_authority_level";
 
+function isMissingUsersUsernameColumnError(errorMessage: string | undefined) {
+  if (!errorMessage) {
+    return false;
+  }
+
+  const lower = errorMessage.toLowerCase();
+  return lower.includes("username") && lower.includes("users") && lower.includes("schema cache");
+}
+
 function rememberRole(role: UserRole) {
   if (typeof window === "undefined") {
     return;
@@ -74,6 +83,23 @@ export async function getCurrentProfile() {
     .select("id,email,username,role,authority_level,created_at")
     .eq("id", user.id)
     .single();
+
+  if (error && isMissingUsersUsernameColumnError(error.message)) {
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from("users")
+      .select("id,email,role,authority_level,created_at")
+      .eq("id", user.id)
+      .single();
+
+    if (fallbackError) {
+      return null;
+    }
+
+    return {
+      ...fallbackData,
+      username: null,
+    };
+  }
 
   if (error) {
     return null;
@@ -175,37 +201,62 @@ export async function ensureUserProfile(options: EnsureProfileOptions = {}) {
   const authorityLevel: AuthorityLevel | null = role === "authority" || role === "admin" ? preferredAuthorityLevel ?? "ward" : null;
   const username = preferredUsername ?? null;
 
-  const { data: existing } = await supabase
+  const { data: existing, error: existingError } = await supabase
     .from("users")
     .select("id,email,username,role,authority_level,created_at")
     .eq("id", id)
     .maybeSingle();
 
-  if (existing) {
-    const nextRole = resolvePreferredRole(existing.role, preferredRole);
-    const nextAuthorityLevel = nextRole === "authority" || nextRole === "admin" ? authorityLevel : null;
-    const nextUsername = preferredUsername ?? existing.username;
+  const usersHasUsernameColumn = !existingError || !isMissingUsersUsernameColumnError(existingError.message);
 
-    if (nextRole !== existing.role || nextAuthorityLevel !== existing.authority_level || nextUsername !== existing.username) {
-      const { error: updateError } = await supabase
-        .from("users")
-        .update({ role: nextRole, authority_level: nextAuthorityLevel, username: nextUsername })
-        .eq("id", id);
+  const existingResolved = existingError && isMissingUsersUsernameColumnError(existingError.message)
+    ? await (async () => {
+        const { data: fallbackExisting } = await supabase
+          .from("users")
+          .select("id,email,role,authority_level,created_at")
+          .eq("id", id)
+          .maybeSingle();
+
+        return fallbackExisting
+          ? {
+              ...fallbackExisting,
+              username: null,
+            }
+          : null;
+      })()
+    : existing;
+
+  if (existingResolved) {
+    const nextRole = resolvePreferredRole(existingResolved.role, preferredRole);
+    const nextAuthorityLevel = nextRole === "authority" || nextRole === "admin" ? authorityLevel : null;
+    const nextUsername = preferredUsername ?? existingResolved.username;
+
+    if (nextRole !== existingResolved.role || nextAuthorityLevel !== existingResolved.authority_level || nextUsername !== existingResolved.username) {
+      const updatePayload: Database["public"]["Tables"]["users"]["Update"] = {
+        role: nextRole,
+        authority_level: nextAuthorityLevel,
+      };
+
+      if (usersHasUsernameColumn) {
+        updatePayload.username = nextUsername;
+      }
+
+      const { error: updateError } = await supabase.from("users").update(updatePayload).eq("id", id);
       if (updateError) {
         throw new Error(updateError.message);
       }
 
       return {
-        ...existing,
+        ...existingResolved,
         role: nextRole,
         authority_level: nextAuthorityLevel,
         username: nextUsername,
       };
     }
 
-    rememberRole(existing.role);
-    rememberAuthorityLevel(existing.authority_level);
-    return existing;
+    rememberRole(existingResolved.role);
+    rememberAuthorityLevel(existingResolved.authority_level);
+    return existingResolved;
   }
 
   const payload: Database["public"]["Tables"]["users"]["Insert"] = {
@@ -213,21 +264,50 @@ export async function ensureUserProfile(options: EnsureProfileOptions = {}) {
     email,
     role,
     authority_level: authorityLevel,
-    username,
   };
+
+  if (usersHasUsernameColumn) {
+    payload.username = username;
+  }
 
   const { error: upsertError } = await supabase.from("users").upsert(payload, { onConflict: "id" });
   if (upsertError) {
     throw new Error(upsertError.message);
   }
 
-  const { data, error } = await supabase.from("users").select("id,email,username,role,authority_level,created_at").eq("id", id).single();
-  if (error) {
-    throw new Error(error.message);
-  }
+  const normalizedData = usersHasUsernameColumn
+    ? await (async () => {
+        const { data, error } = await supabase
+          .from("users")
+          .select("id,email,username,role,authority_level,created_at")
+          .eq("id", id)
+          .single();
 
-  rememberRole(data.role);
-  rememberAuthorityLevel(data.authority_level);
+        if (error || !data) {
+          throw new Error(error?.message || "Failed to read user profile.");
+        }
 
-  return data;
+        return data;
+      })()
+    : await (async () => {
+        const { data, error } = await supabase
+          .from("users")
+          .select("id,email,role,authority_level,created_at")
+          .eq("id", id)
+          .single();
+
+        if (error || !data) {
+          throw new Error(error?.message || "Failed to read user profile.");
+        }
+
+        return {
+          ...data,
+          username: null,
+        };
+      })();
+
+  rememberRole(normalizedData.role);
+  rememberAuthorityLevel(normalizedData.authority_level);
+
+  return normalizedData;
 }

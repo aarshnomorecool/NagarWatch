@@ -9,6 +9,15 @@ type RoleAssignment = Database["public"]["Tables"]["authority_roles"]["Row"];
 
 const AUTHORITY_LEVELS: AuthorityLevel[] = ["ward", "zone", "city", "state"];
 
+function isMissingUsersUsernameColumnError(errorMessage: string | undefined) {
+  if (!errorMessage) {
+    return false;
+  }
+
+  const lower = errorMessage.toLowerCase();
+  return lower.includes("username") && lower.includes("users") && lower.includes("schema cache");
+}
+
 export function RolesManager() {
   const [entries, setEntries] = useState<RoleAssignment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,10 +126,19 @@ export function RolesManager() {
         .maybeSingle();
 
       if (existingUser?.id) {
-        const { error: syncError } = await supabase
+        let { error: syncError } = await supabase
           .from("users")
           .update({ role, authority_level: authorityLevel, username: normalizedUsername })
           .eq("id", existingUser.id);
+
+        if (syncError && isMissingUsersUsernameColumnError(syncError.message)) {
+          syncError = (
+            await supabase
+              .from("users")
+              .update({ role, authority_level: authorityLevel })
+              .eq("id", existingUser.id)
+          ).error;
+        }
 
         if (syncError) {
           throw new Error(syncError.message);

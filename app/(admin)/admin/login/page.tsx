@@ -7,6 +7,15 @@ import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { ensureUserProfile, getAuthorityRoleAssignmentByEmail } from "@/lib/user-profile";
 import type { Database } from "@/types/database";
 
+function isMissingUsersUsernameColumnError(errorMessage: string | undefined) {
+  if (!errorMessage) {
+    return false;
+  }
+
+  const lower = errorMessage.toLowerCase();
+  return lower.includes("username") && lower.includes("users") && lower.includes("schema cache");
+}
+
 export default function AdminLoginPage() {
   return (
     <Suspense fallback={<section className="mx-auto w-full max-w-md" />}>
@@ -54,15 +63,25 @@ function AdminLoginPageContent() {
       const assignment = await getAuthorityRoleAssignmentByEmail(normalizedEmail);
 
       // Backward-compatible recovery: honor existing users.role admin/authority even without authority_roles rows.
-      const { data: existingUser } = await supabase
+      const { data: existingUser, error: existingUserError } = await supabase
         .from("users")
         .select("id,email,username,role,authority_level")
         .eq("id", user.id)
         .maybeSingle();
 
-      const legacyRole = existingUser?.role;
-      const legacyAuthorityLevel = existingUser?.authority_level ?? "state";
-      const legacyUsername = existingUser?.username ?? normalizedEmail.split("@")[0];
+      const existingUserResolved = existingUserError && isMissingUsersUsernameColumnError(existingUserError.message)
+        ? (
+            await supabase
+              .from("users")
+              .select("id,email,role,authority_level")
+              .eq("id", user.id)
+              .maybeSingle()
+          ).data
+        : existingUser;
+
+      const legacyRole = existingUserResolved?.role;
+      const legacyAuthorityLevel = existingUserResolved?.authority_level ?? "state";
+      const legacyUsername = (existingUserResolved as { username?: string | null } | null)?.username ?? normalizedEmail.split("@")[0];
 
       let resolvedAssignment = assignment;
 
