@@ -9,15 +9,6 @@ type RoleAssignment = Database["public"]["Tables"]["authority_roles"]["Row"];
 
 const AUTHORITY_LEVELS: AuthorityLevel[] = ["ward", "zone", "city", "state"];
 
-function isMissingUsersUsernameColumnError(errorMessage: string | undefined) {
-  if (!errorMessage) {
-    return false;
-  }
-
-  const lower = errorMessage.toLowerCase();
-  return lower.includes("username") && lower.includes("users") && lower.includes("schema cache");
-}
-
 export function RolesManager() {
   const [entries, setEntries] = useState<RoleAssignment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,6 +18,7 @@ export function RolesManager() {
 
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [role, setRole] = useState<"authority" | "admin">("authority");
   const [authorityLevel, setAuthorityLevel] = useState<AuthorityLevel>("ward");
   const effectiveAuthorityLevel: AuthorityLevel = role === "admin" ? "state" : authorityLevel;
@@ -86,8 +78,8 @@ export function RolesManager() {
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedUsername = username.trim();
 
-    if (!normalizedEmail || !normalizedUsername) {
-      setError("Email and authority name are required.");
+    if (!normalizedEmail || !normalizedUsername || password.trim().length < 6) {
+      setError("Email, authority name, and password (min 6 chars) are required.");
       return;
     }
 
@@ -102,48 +94,31 @@ export function RolesManager() {
 
     try {
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      const payload: Database["public"]["Tables"]["authority_roles"]["Insert"] = {
-        email: normalizedEmail,
-        username: normalizedUsername,
-        role,
-        authority_level: effectiveAuthorityLevel,
-        active: true,
-        created_by: user?.id ?? null,
-      };
-
-      const { error: upsertError } = await supabase.from("authority_roles").upsert(payload, { onConflict: "email" });
-      if (upsertError) {
-        throw new Error(upsertError.message);
+      if (!session?.access_token) {
+        throw new Error("Your session expired. Please login again.");
       }
 
-      // If the user has already signed up, immediately sync their operational role.
-      const { data: existingUser } = await supabase
-        .from("users")
-        .select("id")
-        .eq("email", normalizedEmail)
-        .maybeSingle();
+      const response = await fetch("/api/admin/provision-role", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          email: normalizedEmail,
+          username: normalizedUsername,
+          password: password.trim(),
+          role,
+          authorityLevel: effectiveAuthorityLevel,
+        }),
+      });
 
-      if (existingUser?.id) {
-        let { error: syncError } = await supabase
-          .from("users")
-          .update({ role, authority_level: effectiveAuthorityLevel, username: normalizedUsername })
-          .eq("id", existingUser.id);
-
-        if (syncError && isMissingUsersUsernameColumnError(syncError.message)) {
-          syncError = (
-            await supabase
-              .from("users")
-              .update({ role, authority_level: effectiveAuthorityLevel })
-              .eq("id", existingUser.id)
-          ).error;
-        }
-
-        if (syncError) {
-          throw new Error(syncError.message);
-        }
+      const result = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        throw new Error(result?.error || "Failed to provision role account.");
       }
 
       const { data: refreshed } = await supabase
@@ -154,6 +129,7 @@ export function RolesManager() {
       setEntries(refreshed ?? []);
       setEmail("");
       setUsername("");
+      setPassword("");
       setRole("authority");
       setAuthorityLevel("ward");
     } catch (caughtError) {
@@ -232,6 +208,20 @@ export function RolesManager() {
           </div>
 
           <div className="space-y-1.5">
+            <label htmlFor="role-password" className="text-sm font-medium" style={{ color: "var(--text)" }}>Initial Password</label>
+            <input
+              id="role-password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="input-base"
+              placeholder="Set an initial password"
+              minLength={6}
+              required
+            />
+          </div>
+
+          <div className="space-y-1.5">
             <label htmlFor="role-type" className="text-sm font-medium" style={{ color: "var(--text)" }}>Role</label>
             <select
               id="role-type"
@@ -270,7 +260,7 @@ export function RolesManager() {
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
         <button type="submit" className="btn-primary" disabled={saving}>
-          {saving ? "Saving..." : "Save Access Role"}
+          {saving ? "Saving..." : "Save Role + Password"}
         </button>
       </form>
 
