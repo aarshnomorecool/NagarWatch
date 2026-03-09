@@ -13,6 +13,8 @@ export default function AdminLayout({
   const router = useRouter();
   const pathname = usePathname();
   const isLoginRoute = pathname === "/admin/login";
+  const isBootstrapRoute = pathname === "/admin/bootstrap";
+  const isPublicAdminRoute = isLoginRoute || isBootstrapRoute;
   const [allowed, setAllowed] = useState(false);
   const [checking, setChecking] = useState(true);
 
@@ -20,7 +22,7 @@ export default function AdminLayout({
     let active = true;
 
     const checkRole = async () => {
-      if (isLoginRoute) {
+      if (isPublicAdminRoute) {
         setAllowed(true);
         setChecking(false);
         return;
@@ -48,7 +50,7 @@ export default function AdminLayout({
     return () => {
       active = false;
     };
-  }, [isLoginRoute, router]);
+  }, [isPublicAdminRoute, router]);
 
   if (checking) {
     return <div className="surface-card p-4 text-sm text-muted">Checking admin access...</div>;
@@ -58,7 +60,7 @@ export default function AdminLayout({
     return null;
   }
 
-  if (isLoginRoute) {
+  if (isPublicAdminRoute) {
     return <>{children}</>;
   }
 

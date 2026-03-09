@@ -158,6 +158,9 @@ function AdminLoginPageContent() {
       <p className="text-sm text-muted">
         Need authority access? Ask an admin to add your role from <Link href="/admin/roles" className="font-medium underline" style={{ color: "var(--primary)" }}>Roles</Link>.
       </p>
+      <p className="text-xs text-muted">
+        First-time setup only: <Link href="/admin/bootstrap" className="font-medium underline" style={{ color: "var(--primary)" }}>Create first admin account</Link>
+      </p>
     </section>
   );
 }
