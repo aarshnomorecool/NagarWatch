@@ -29,6 +29,7 @@ export function RolesManager() {
   const [username, setUsername] = useState("");
   const [role, setRole] = useState<"authority" | "admin">("authority");
   const [authorityLevel, setAuthorityLevel] = useState<AuthorityLevel>("ward");
+  const effectiveAuthorityLevel: AuthorityLevel = role === "admin" ? "state" : authorityLevel;
 
   useEffect(() => {
     let active = true;
@@ -108,7 +109,7 @@ export function RolesManager() {
         email: normalizedEmail,
         username: normalizedUsername,
         role,
-        authority_level: authorityLevel,
+        authority_level: effectiveAuthorityLevel,
         active: true,
         created_by: user?.id ?? null,
       };
@@ -128,14 +129,14 @@ export function RolesManager() {
       if (existingUser?.id) {
         let { error: syncError } = await supabase
           .from("users")
-          .update({ role, authority_level: authorityLevel, username: normalizedUsername })
+          .update({ role, authority_level: effectiveAuthorityLevel, username: normalizedUsername })
           .eq("id", existingUser.id);
 
         if (syncError && isMissingUsersUsernameColumnError(syncError.message)) {
           syncError = (
             await supabase
               .from("users")
-              .update({ role, authority_level: authorityLevel })
+              .update({ role, authority_level: effectiveAuthorityLevel })
               .eq("id", existingUser.id)
           ).error;
         }
@@ -232,7 +233,18 @@ export function RolesManager() {
 
           <div className="space-y-1.5">
             <label htmlFor="role-type" className="text-sm font-medium" style={{ color: "var(--text)" }}>Role</label>
-            <select id="role-type" value={role} onChange={(event) => setRole(event.target.value as "authority" | "admin")} className="input-base">
+            <select
+              id="role-type"
+              value={role}
+              onChange={(event) => {
+                const nextRole = event.target.value as "authority" | "admin";
+                setRole(nextRole);
+                if (nextRole === "admin") {
+                  setAuthorityLevel("state");
+                }
+              }}
+              className="input-base"
+            >
               <option value="authority">Authority</option>
               <option value="admin">Admin</option>
             </select>
@@ -240,11 +252,18 @@ export function RolesManager() {
 
           <div className="space-y-1.5">
             <label htmlFor="role-level" className="text-sm font-medium" style={{ color: "var(--text)" }}>Authority Level</label>
-            <select id="role-level" value={authorityLevel} onChange={(event) => setAuthorityLevel(event.target.value as AuthorityLevel)} className="input-base">
+            <select
+              id="role-level"
+              value={effectiveAuthorityLevel}
+              onChange={(event) => setAuthorityLevel(event.target.value as AuthorityLevel)}
+              className="input-base"
+              disabled={role === "admin"}
+            >
               {AUTHORITY_LEVELS.map((level) => (
                 <option key={level} value={level}>{level}</option>
               ))}
             </select>
+            {role === "admin" ? <p className="text-xs text-muted">Admin is always assigned to state level.</p> : null}
           </div>
         </div>
 
