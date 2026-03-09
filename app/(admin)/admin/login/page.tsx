@@ -4,15 +4,7 @@ import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
-import { ensureUserProfile } from "@/lib/user-profile";
-import type { AuthorityLevel, UserRole } from "@/types/database";
-
-const authorityLevels: Array<{ value: AuthorityLevel; label: string }> = [
-  { value: "ward", label: "Ward Officer" },
-  { value: "zone", label: "Zone Officer" },
-  { value: "city", label: "City Commissioner" },
-  { value: "state", label: "State Authority" },
-];
+import { ensureUserProfile, getAuthorityRoleAssignmentByEmail } from "@/lib/user-profile";
 
 export default function AdminLoginPage() {
   return (
@@ -29,8 +21,6 @@ function AdminLoginPageContent() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [selectedRole, setSelectedRole] = useState<UserRole>("authority");
-  const [authorityLevel, setAuthorityLevel] = useState<AuthorityLevel>("ward");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -50,10 +40,26 @@ function AdminLoginPageContent() {
         throw new Error(error.message);
       }
 
-      await ensureUserProfile({
-        preferredRole: selectedRole,
-        preferredAuthorityLevel: authorityLevel,
-      });
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      const assignment = user?.email ? await getAuthorityRoleAssignmentByEmail(user.email) : null;
+
+      const profile = await ensureUserProfile(
+        assignment
+          ? {
+              preferredRole: assignment.role,
+              preferredAuthorityLevel: assignment.authority_level,
+              preferredUsername: assignment.username,
+            }
+          : undefined,
+      );
+
+      if (profile?.role !== "admin" && profile?.role !== "authority") {
+        await supabase.auth.signOut();
+        throw new Error("Access not provisioned. Ask an admin to add your account in Roles.");
+      }
 
       router.push(nextPath || "/admin/dashboard");
       router.refresh();
@@ -67,8 +73,8 @@ function AdminLoginPageContent() {
 
   return (
     <section className="mx-auto w-full max-w-md space-y-4">
-      <h1 className="text-2xl font-semibold" style={{ color: "var(--text)" }}>Authority Login</h1>
-      <p className="text-sm text-muted">Sign in to manage, escalate, and resolve field complaints.</p>
+      <h1 className="text-2xl font-semibold" style={{ color: "var(--text)" }}>Admin Login</h1>
+      <p className="text-sm text-muted">Only admin-provisioned authority accounts can access this portal.</p>
 
       <form onSubmit={loginWithEmail} className="surface-card space-y-4 p-4">
         <div className="space-y-1.5">
@@ -81,33 +87,6 @@ function AdminLoginPageContent() {
           <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="input-base" required />
         </div>
 
-        <div className="space-y-1.5">
-          <label htmlFor="role" className="text-sm font-medium" style={{ color: "var(--text)" }}>Access Role</label>
-          <select
-            id="role"
-            value={selectedRole}
-            onChange={(event) => setSelectedRole(event.target.value as UserRole)}
-            className="input-base"
-          >
-            <option value="authority">Authority</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-
-        <div className="space-y-1.5">
-          <label htmlFor="authority-level" className="text-sm font-medium" style={{ color: "var(--text)" }}>Authority Level</label>
-          <select
-            id="authority-level"
-            value={authorityLevel}
-            onChange={(event) => setAuthorityLevel(event.target.value as AuthorityLevel)}
-            className="input-base"
-          >
-            {authorityLevels.map((level) => (
-              <option key={level.value} value={level.value}>{level.label}</option>
-            ))}
-          </select>
-        </div>
-
         {message ? <p className="text-sm text-red-600">{message}</p> : null}
 
         <button type="submit" disabled={busy} className="btn-primary w-full py-2.5">
@@ -116,7 +95,7 @@ function AdminLoginPageContent() {
       </form>
 
       <p className="text-sm text-muted">
-        New authority user? <Link href="/signup?role=authority" className="font-medium underline" style={{ color: "var(--primary)" }}>Create access</Link>
+        Need authority access? Ask an admin to add your role from <Link href="/admin/roles" className="font-medium underline" style={{ color: "var(--primary)" }}>Roles</Link>.
       </p>
     </section>
   );

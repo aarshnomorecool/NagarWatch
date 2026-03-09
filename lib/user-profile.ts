@@ -5,6 +5,7 @@ export type ProfileRow = Database["public"]["Tables"]["users"]["Row"];
 type EnsureProfileOptions = {
   preferredRole?: UserRole;
   preferredAuthorityLevel?: AuthorityLevel;
+  preferredUsername?: string;
 };
 
 const ROLE_STORAGE_KEY = "nagarwatch_preferred_role";
@@ -70,7 +71,7 @@ export async function getCurrentProfile() {
 
   const { data, error } = await supabase
     .from("users")
-    .select("id,email,role,authority_level,created_at")
+    .select("id,email,username,role,authority_level,created_at")
     .eq("id", user.id)
     .single();
 
@@ -105,6 +106,48 @@ export async function getCurrentUserRole(): Promise<UserRole | null> {
   return readRememberedRole();
 }
 
+export async function getAuthorityRoleAssignmentByEmail(email: string) {
+  const supabase = getSupabaseBrowserClientOrNull();
+  if (!supabase) {
+    return null;
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("authority_roles")
+    .select("email,username,role,authority_level,active")
+    .eq("email", normalizedEmail)
+    .eq("active", true)
+    .maybeSingle();
+
+  if (error) {
+    return null;
+  }
+
+  if (!data || (data.role !== "authority" && data.role !== "admin")) {
+    return null;
+  }
+
+  return data;
+}
+
+function resolvePreferredRole(existingRole: UserRole, preferredRole?: UserRole): UserRole {
+  if (!preferredRole) {
+    return existingRole;
+  }
+
+  // Never downgrade admin/authority to citizen from client route preference.
+  if (preferredRole === "citizen" && (existingRole === "admin" || existingRole === "authority")) {
+    return existingRole;
+  }
+
+  return preferredRole;
+}
+
 export async function ensureUserProfile(options: EnsureProfileOptions = {}) {
   const supabase = getSupabaseBrowserClientOrNull();
   if (!supabase) {
@@ -115,6 +158,7 @@ export async function ensureUserProfile(options: EnsureProfileOptions = {}) {
   const rememberedAuthorityLevel = readRememberedAuthorityLevel();
   const preferredRole = options.preferredRole ?? rememberedRole ?? undefined;
   const preferredAuthorityLevel = options.preferredAuthorityLevel ?? rememberedAuthorityLevel ?? undefined;
+  const preferredUsername = options.preferredUsername?.trim() || undefined;
   if (preferredRole) {
     rememberRole(preferredRole);
   }
@@ -129,18 +173,23 @@ export async function ensureUserProfile(options: EnsureProfileOptions = {}) {
   const email = authUser.email ?? `${id}@nagarwatch.local`;
   const role: UserRole = preferredRole ?? "citizen";
   const authorityLevel: AuthorityLevel | null = role === "authority" || role === "admin" ? preferredAuthorityLevel ?? "ward" : null;
+  const username = preferredUsername ?? null;
 
   const { data: existing } = await supabase
     .from("users")
-    .select("id,email,role,authority_level,created_at")
+    .select("id,email,username,role,authority_level,created_at")
     .eq("id", id)
     .maybeSingle();
 
   if (existing) {
-    if ((preferredRole && existing.role !== preferredRole) || (authorityLevel !== existing.authority_level)) {
+    const nextRole = resolvePreferredRole(existing.role, preferredRole);
+    const nextAuthorityLevel = nextRole === "authority" || nextRole === "admin" ? authorityLevel : null;
+    const nextUsername = preferredUsername ?? existing.username;
+
+    if (nextRole !== existing.role || nextAuthorityLevel !== existing.authority_level || nextUsername !== existing.username) {
       const { error: updateError } = await supabase
         .from("users")
-        .update({ role: preferredRole ?? existing.role, authority_level: authorityLevel })
+        .update({ role: nextRole, authority_level: nextAuthorityLevel, username: nextUsername })
         .eq("id", id);
       if (updateError) {
         throw new Error(updateError.message);
@@ -148,8 +197,9 @@ export async function ensureUserProfile(options: EnsureProfileOptions = {}) {
 
       return {
         ...existing,
-        role: preferredRole ?? existing.role,
-        authority_level: authorityLevel,
+        role: nextRole,
+        authority_level: nextAuthorityLevel,
+        username: nextUsername,
       };
     }
 
@@ -163,6 +213,7 @@ export async function ensureUserProfile(options: EnsureProfileOptions = {}) {
     email,
     role,
     authority_level: authorityLevel,
+    username,
   };
 
   const { error: upsertError } = await supabase.from("users").upsert(payload, { onConflict: "id" });
@@ -170,7 +221,7 @@ export async function ensureUserProfile(options: EnsureProfileOptions = {}) {
     throw new Error(upsertError.message);
   }
 
-  const { data, error } = await supabase.from("users").select("id,email,role,authority_level,created_at").eq("id", id).single();
+  const { data, error } = await supabase.from("users").select("id,email,username,role,authority_level,created_at").eq("id", id).single();
   if (error) {
     throw new Error(error.message);
   }

@@ -13,6 +13,7 @@ export type Database = {
         Row: {
           id: string;
           email: string;
+          username: string | null;
           role: UserRole;
           authority_level: AuthorityLevel | null;
           created_at: string;
@@ -20,6 +21,7 @@ export type Database = {
         Insert: {
           id?: string;
           email: string;
+          username?: string | null;
           role: UserRole;
           authority_level?: AuthorityLevel | null;
           created_at?: string;
@@ -27,8 +29,42 @@ export type Database = {
         Update: {
           id?: string;
           email?: string;
+          username?: string | null;
           role?: UserRole;
           authority_level?: AuthorityLevel | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      authority_roles: {
+        Row: {
+          id: string;
+          email: string;
+          username: string;
+          role: UserRole;
+          authority_level: AuthorityLevel;
+          active: boolean;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          email: string;
+          username: string;
+          role: UserRole;
+          authority_level: AuthorityLevel;
+          active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          email?: string;
+          username?: string;
+          role?: UserRole;
+          authority_level?: AuthorityLevel;
+          active?: boolean;
+          created_by?: string | null;
           created_at?: string;
         };
         Relationships: [];

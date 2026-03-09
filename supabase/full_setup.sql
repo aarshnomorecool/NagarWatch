@@ -7,8 +7,20 @@ create extension if not exists pgcrypto;
 create table if not exists public.users (
   id text primary key,
   email text not null unique,
+  username text,
   role text not null check (role in ('citizen', 'authority', 'admin')) default 'citizen',
   authority_level text check (authority_level in ('ward', 'zone', 'city', 'state')),
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.authority_roles (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique,
+  username text not null,
+  role text not null check (role in ('authority', 'admin')) default 'authority',
+  authority_level text not null check (authority_level in ('ward', 'zone', 'city', 'state')) default 'ward',
+  active boolean not null default true,
+  created_by text,
   created_at timestamptz not null default now()
 );
 
@@ -23,6 +35,7 @@ create index if not exists idx_profiles_role on public.profiles(role);
 
 create index if not exists idx_users_role on public.users(role);
 create index if not exists idx_users_authority_level on public.users(authority_level);
+create index if not exists idx_authority_roles_email on public.authority_roles(email);
 
 create or replace function public.current_user_role()
 returns text
@@ -82,6 +95,7 @@ alter table public.issues add column if not exists assigned_authority_level text
 alter table public.issues add column if not exists escalation_level integer not null default 0;
 alter table public.issues add column if not exists last_escalated_at timestamptz;
 alter table public.users add column if not exists authority_level text;
+alter table public.users add column if not exists username text;
 
 create table if not exists public.upvotes (
   id uuid primary key default gen_random_uuid(),
@@ -283,6 +297,7 @@ alter table public.departments enable row level security;
 alter table public.resolutions enable row level security;
 alter table public.escalations enable row level security;
 alter table public.issue_events enable row level security;
+alter table public.authority_roles enable row level security;
 
 -- App mode (no-auth currently): allow anon + authenticated to read/write civic tables.
 do $$
@@ -370,6 +385,16 @@ begin
   end if;
   if not exists (select 1 from pg_policies where schemaname='public' and tablename='profiles' and policyname='profiles_update_all') then
     create policy profiles_update_all on public.profiles for update using (true) with check (true);
+  end if;
+
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='authority_roles' and policyname='authority_roles_select_all') then
+    create policy authority_roles_select_all on public.authority_roles for select using (true);
+  end if;
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='authority_roles' and policyname='authority_roles_insert_all') then
+    create policy authority_roles_insert_all on public.authority_roles for insert with check (true);
+  end if;
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='authority_roles' and policyname='authority_roles_update_all') then
+    create policy authority_roles_update_all on public.authority_roles for update using (true) with check (true);
   end if;
 end $$;
 

@@ -5,7 +5,6 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { ensureUserProfile } from "@/lib/user-profile";
-import type { UserRole } from "@/types/database";
 
 export default function SignupPage() {
   return (
@@ -18,12 +17,10 @@ export default function SignupPage() {
 function SignupPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const roleFromQuery = searchParams?.get("role");
-  const defaultRole: UserRole = roleFromQuery === "authority" || roleFromQuery === "admin" ? "authority" : "citizen";
+  const nextPath = searchParams?.get("next");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [selectedRole, setSelectedRole] = useState<UserRole>(defaultRole);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -56,19 +53,17 @@ function SignupPageContent() {
 
       if (!signupData.session) {
         setMessage("Account created. Please confirm your email using the link sent to your inbox, then login.");
-        router.push(selectedRole === "authority" || selectedRole === "admin" ? "/admin/login" : "/citizen/login");
+        router.push("/citizen/login");
         return;
       }
 
-      let resolvedRole: UserRole = selectedRole;
       try {
-        const profile = await ensureUserProfile({ preferredRole: selectedRole });
-        resolvedRole = profile?.role ?? selectedRole;
+        await ensureUserProfile({ preferredRole: "citizen" });
       } catch {
         // Do not block successful auth on profile sync issues.
       }
 
-      router.push(resolvedRole === "authority" || resolvedRole === "admin" ? "/admin/dashboard" : "/citizen/dashboard");
+      router.push(nextPath || "/citizen/dashboard");
       router.refresh();
     } catch (caughtError) {
       setMessage(toUserMessage(caughtError, "Signup failed."));
@@ -90,7 +85,7 @@ function SignupPageContent() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/account?role=${selectedRole}`,
+          redirectTo: `${window.location.origin}/account?role=citizen`,
         },
       });
 
@@ -106,7 +101,7 @@ function SignupPageContent() {
   return (
     <section className="mx-auto w-full max-w-md space-y-4">
       <h1 className="text-2xl font-semibold text-slate-900">Create Account</h1>
-      <p className="text-sm text-slate-600">Create a new account and start using NagarWatch.</p>
+      <p className="text-sm text-slate-600">Create a citizen account and start using NagarWatch.</p>
 
       <form onSubmit={signupWithEmail} className="surface-card space-y-4 p-4">
         <div className="space-y-1.5">
@@ -117,18 +112,6 @@ function SignupPageContent() {
         <div className="space-y-1.5">
           <label htmlFor="password" className="text-sm font-medium text-slate-700">Password</label>
           <input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="input-base" minLength={6} required />
-        </div>
-
-        <div className="space-y-1.5">
-          <p className="text-sm font-medium text-slate-700">Choose dashboard</p>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setSelectedRole("citizen")} className={`btn-choice ${selectedRole === "citizen" ? "btn-choice-active" : ""}`}>
-              Citizen
-            </button>
-            <button type="button" onClick={() => setSelectedRole("authority")} className={`btn-choice ${selectedRole === "authority" ? "btn-choice-active" : ""}`}>
-              Authority
-            </button>
-          </div>
         </div>
 
         {message ? <p className="text-sm text-slate-700">{message}</p> : null}
@@ -143,7 +126,7 @@ function SignupPageContent() {
       </form>
 
       <p className="text-sm text-slate-600">
-        Already have an account? <Link href={selectedRole === "authority" ? "/admin/login" : "/citizen/login"} className="font-medium text-blue-700 underline">Login</Link>
+        Already have an account? <Link href="/citizen/login" className="font-medium text-blue-700 underline">Login</Link>
       </p>
     </section>
   );
