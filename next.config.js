@@ -1,21 +1,11 @@
-const { PHASE_DEVELOPMENT_SERVER } = require("next/constants");
+/** @type {import('next').NextConfig} */
+module.exports = {
+  webpack: (config, { dev }) => {
+    // Keep conservative dev caching to avoid intermittent cache corruption.
+    if (dev) {
+      config.cache = false;
+    }
 
-module.exports = (phase) => {
-  const isDevServer = phase === PHASE_DEVELOPMENT_SERVER;
-
-  /** @type {import('next').NextConfig} */
-  const nextConfig = {
-    // Keep dev artifacts separate so `next build` cannot corrupt running `next dev` output.
-    distDir: isDevServer ? ".next-dev" : ".next",
-    webpack: (config, { dev }) => {
-      // Prevent intermittent dev-time chunk/cache corruption in this environment.
-      if (dev) {
-        config.cache = false;
-      }
-
-      return config;
-    },
-  };
-
-  return nextConfig;
+    return config;
+  },
 };
