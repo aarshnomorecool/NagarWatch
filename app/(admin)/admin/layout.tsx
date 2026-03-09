@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { getCurrentUserRole } from "@/lib/user-profile";
 
 export default function AdminLayout({
@@ -11,6 +11,8 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const isLoginRoute = pathname === "/admin/login";
   const [allowed, setAllowed] = useState(false);
   const [checking, setChecking] = useState(true);
 
@@ -18,6 +20,12 @@ export default function AdminLayout({
     let active = true;
 
     const checkRole = async () => {
+      if (isLoginRoute) {
+        setAllowed(true);
+        setChecking(false);
+        return;
+      }
+
       const role = await getCurrentUserRole();
 
       if (!active) {
@@ -40,7 +48,7 @@ export default function AdminLayout({
     return () => {
       active = false;
     };
-  }, [router]);
+  }, [isLoginRoute, router]);
 
   if (checking) {
     return <div className="surface-card p-4 text-sm text-muted">Checking admin access...</div>;
@@ -48,6 +56,10 @@ export default function AdminLayout({
 
   if (!allowed) {
     return null;
+  }
+
+  if (isLoginRoute) {
+    return <>{children}</>;
   }
 
   return (
