@@ -1,4 +1,5 @@
 import type { DbDepartment, DbEscalation, DbIssue } from "@/types/database";
+import { nextAuthorityLevel } from "@/lib/authority";
 
 export type CategoryChartDatum = {
   category: string;
@@ -31,21 +32,30 @@ export function escalationRuleForIssue(issue: DbIssue) {
     return null;
   }
 
-  const days = pendingDurationDays(issue.created_at);
-
-  if (days > 30) {
-    return { escalation_level: 3, escalated_to: "state authority" } as const;
+  const hours = pendingDurationHours(issue.created_at);
+  const currentLevel = issue.assigned_authority_level;
+  const nextLevel = nextAuthorityLevel(currentLevel);
+  if (!nextLevel) {
+    return null;
   }
 
-  if (days > 15) {
-    return { escalation_level: 2, escalated_to: "commissioner" } as const;
+  const thresholdHoursByLevel = {
+    ward: 24,
+    zone: 48,
+    city: 72,
+    state: Number.MAX_SAFE_INTEGER,
+  } as const;
+
+  const threshold = thresholdHoursByLevel[currentLevel];
+  if (hours < threshold) {
+    return null;
   }
 
-  if (days > 7) {
-    return { escalation_level: 1, escalated_to: "ward authority" } as const;
-  }
-
-  return null;
+  return {
+    escalation_level: issue.escalation_level + 1,
+    escalated_to: `${nextLevel} authority`,
+    escalated_to_level: nextLevel,
+  } as const;
 }
 
 export function sortIssues(issues: DbIssue[], sortMode: "upvotes" | "pending_duration") {

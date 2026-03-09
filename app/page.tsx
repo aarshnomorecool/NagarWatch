@@ -99,7 +99,7 @@ export default function HomePage() {
                 <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--primary)" }}>Launch as Citizen</p>
                 <p className="mt-1 text-sm" style={{ color: "var(--text)" }}>Track civic issues, post complaints, and vote on ongoing problems.</p>
                 <div className="mt-3 flex gap-2">
-                  <Link href="/login?role=citizen" className="btn-primary px-3 py-1.5 text-xs">Login</Link>
+                  <Link href="/citizen/login" className="btn-primary px-3 py-1.5 text-xs">Login</Link>
                   <Link href="/signup?role=citizen" className="btn-secondary px-3 py-1.5 text-xs">Create Account</Link>
                 </div>
               </article>

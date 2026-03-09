@@ -19,7 +19,7 @@ import { formatDate } from "@/lib/utils";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { createIssueEvent } from "@/lib/issue-events";
 import { notifyIssueFollowers } from "@/lib/notifications";
-import { ensureUserProfile, getCurrentUserRole } from "@/lib/user-profile";
+import { ensureUserProfile, getCurrentUserRole, readRememberedAuthorityLevel } from "@/lib/user-profile";
 import {
   categoryChartData,
   computeDepartmentResolutionRates,
@@ -31,6 +31,7 @@ import {
   type DepartmentChartDatum,
 } from "@/lib/admin-dashboard";
 import { getSlaState } from "@/lib/sla";
+import { canManageIssueByAuthority } from "@/lib/authority";
 import type { Database, DbDepartment, DbEscalation, DbIssue, UserRole } from "@/types/database";
 
 type SortMode = "upvotes" | "pending_duration";
@@ -109,6 +110,7 @@ export function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const [userAuthorityLevel, setUserAuthorityLevel] = useState<"ward" | "zone" | "city" | "state" | null>(null);
   const [resolvedAtByIssueId, setResolvedAtByIssueId] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -131,18 +133,20 @@ export function AdminDashboard() {
       const profile = await ensureUserProfile();
       if (profile?.role) {
         setUserRole(profile.role);
+        setUserAuthorityLevel(profile.authority_level);
       } else {
         const resolvedRole = await getCurrentUserRole();
         setUserRole(resolvedRole ?? "citizen");
+        setUserAuthorityLevel(readRememberedAuthorityLevel());
       }
 
       const [issuesRes, departmentsRes, escalationsRes, resolutionsRes] = await Promise.all([
         supabase
           .from("issues")
-          .select("id,title,description,category,road_name,landmark,area_name,latitude,longitude,image_url,status,created_by,created_at,upvote_count,downvote_count,is_priority,sla_target_hours,reopened_at,reopened_by,reopen_reason,reopen_proof")
+          .select("id,title,description,category,road_name,landmark,area_name,latitude,longitude,image_url,status,created_by,created_at,upvote_count,downvote_count,is_priority,sla_target_hours,assigned_authority_level,escalation_level,last_escalated_at,reopened_at,reopened_by,reopen_reason,reopen_proof")
           .order("created_at", { ascending: false }),
         supabase.from("departments").select("id,name,resolution_rate").order("name", { ascending: true }),
-        supabase.from("escalations").select("id,issue_id,escalation_level,escalated_to,created_at"),
+        supabase.from("escalations").select("id,issue_id,escalation_level,escalated_to,escalated_to_level,created_at"),
         supabase.from("resolutions").select("issue_id,resolved_at").order("resolved_at", { ascending: false }),
       ]);
 
@@ -186,6 +190,7 @@ export function AdminDashboard() {
             issue_id: issue.id,
             escalation_level: rule.escalation_level,
             escalated_to: rule.escalated_to,
+            escalated_to_level: rule.escalated_to_level,
           });
 
           return acc;
@@ -196,9 +201,22 @@ export function AdminDashboard() {
         if (insertEscalationError) {
           setError(insertEscalationError.message);
         } else {
+          await Promise.all(
+            escalationInserts.map((entry) =>
+              supabase
+                .from("issues")
+                .update({
+                  assigned_authority_level: entry.escalated_to_level,
+                  escalation_level: entry.escalation_level,
+                  last_escalated_at: new Date().toISOString(),
+                })
+                .eq("id", entry.issue_id),
+            ),
+          );
+
           const { data: refreshedEscalations } = await supabase
             .from("escalations")
-            .select("id,issue_id,escalation_level,escalated_to,created_at");
+            .select("id,issue_id,escalation_level,escalated_to,escalated_to_level,created_at");
           loadedEscalations = refreshedEscalations ?? loadedEscalations;
         }
       }
@@ -348,6 +366,17 @@ export function AdminDashboard() {
       return;
     }
 
+    const issue = issues.find((item) => item.id === issueId);
+    if (!issue) {
+      setError("Issue not found.");
+      return;
+    }
+
+    if (!canManageIssueByAuthority(userRole, userAuthorityLevel, issue)) {
+      setError("This issue is assigned to a higher authority tier.");
+      return;
+    }
+
     setBusyIssueId(issueId);
     setError(null);
 
@@ -405,6 +434,11 @@ export function AdminDashboard() {
   const submitResolution = async (issue: DbIssue) => {
     if (!isAuthority) {
       setError("Only authority/admin users can submit resolutions.");
+      return;
+    }
+
+    if (!canManageIssueByAuthority(userRole, userAuthorityLevel, issue)) {
+      setError("This issue is assigned to a higher authority tier.");
       return;
     }
 
@@ -758,7 +792,7 @@ export function AdminDashboard() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    disabled={busyIssueId === selectedIssue.id || selectedIssue.status === "in_progress" || !isAuthority}
+                    disabled={busyIssueId === selectedIssue.id || selectedIssue.status === "in_progress" || !isAuthority || !canManageIssueByAuthority(userRole, userAuthorityLevel, selectedIssue)}
                     onClick={() => void updateIssueStatus(selectedIssue.id, "in_progress")}
                     className="btn-secondary px-3 py-1.5 text-xs"
                   >
@@ -766,7 +800,7 @@ export function AdminDashboard() {
                   </button>
                   <button
                     type="button"
-                    disabled={busyIssueId === selectedIssue.id || selectedIssue.status === "resolved" || !isAuthority}
+                    disabled={busyIssueId === selectedIssue.id || selectedIssue.status === "resolved" || !isAuthority || !canManageIssueByAuthority(userRole, userAuthorityLevel, selectedIssue)}
                     onClick={() => void submitResolution(selectedIssue)}
                     className="btn-success px-3 py-1.5 text-xs"
                   >
@@ -782,14 +816,14 @@ export function AdminDashboard() {
                   onChange={(event) => setDraftNote(selectedIssue.id, event.target.value)}
                   placeholder="Resolution note"
                   className="input-base"
-                  disabled={!isAuthority}
+                  disabled={!isAuthority || !canManageIssueByAuthority(userRole, userAuthorityLevel, selectedIssue)}
                 />
                 <input
                   type="file"
                   accept="image/*"
                   onChange={(event) => setDraftFile(selectedIssue.id, event.target.files?.[0] ?? null)}
                   className="input-base"
-                  disabled={!isAuthority}
+                  disabled={!isAuthority || !canManageIssueByAuthority(userRole, userAuthorityLevel, selectedIssue)}
                 />
               </div>
             </article>

@@ -5,10 +5,11 @@ import { useEffect, useMemo, useState } from "react";
 import { createIssueEvent } from "@/lib/issue-events";
 import { notifyIssueFollowers } from "@/lib/notifications";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
-import { ensureUserProfile, getCurrentUserRole } from "@/lib/user-profile";
+import { ensureUserProfile, getCurrentUserRole, readRememberedAuthorityLevel } from "@/lib/user-profile";
 import { getSlaState } from "@/lib/sla";
 import { formatDate } from "@/lib/utils";
-import type { DbIssue, UserRole } from "@/types/database";
+import { canManageIssueByAuthority } from "@/lib/authority";
+import type { AuthorityLevel, DbIssue, UserRole } from "@/types/database";
 
 type ResolutionDraft = {
   note: string;
@@ -82,6 +83,7 @@ export function IssuesTable() {
   const [currentPage, setCurrentPage] = useState(1);
   const [resolutionDraft, setResolutionDraft] = useState<ResolutionDraft>({ note: "", file: null });
   const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const [userAuthorityLevel, setUserAuthorityLevel] = useState<AuthorityLevel | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,11 +103,13 @@ export function IssuesTable() {
 
       const role = await getCurrentUserRole();
       setUserRole(role ?? "citizen");
+      const profile = await ensureUserProfile();
+      setUserAuthorityLevel(profile?.authority_level ?? readRememberedAuthorityLevel());
 
       const [issuesRes, resolutionsRes] = await Promise.all([
         supabase
           .from("issues")
-          .select("id,title,description,category,road_name,landmark,area_name,latitude,longitude,image_url,status,created_by,created_at,upvote_count,downvote_count,is_priority,sla_target_hours,reopened_at,reopened_by,reopen_reason,reopen_proof")
+          .select("id,title,description,category,road_name,landmark,area_name,latitude,longitude,image_url,status,created_by,created_at,upvote_count,downvote_count,is_priority,sla_target_hours,assigned_authority_level,escalation_level,last_escalated_at,reopened_at,reopened_by,reopen_reason,reopen_proof")
           .order("created_at", { ascending: false }),
         supabase.from("resolutions").select("issue_id,resolved_at").order("resolved_at", { ascending: false }),
       ]);
@@ -180,6 +184,17 @@ export function IssuesTable() {
       return;
     }
 
+    const issue = issues.find((item) => item.id === issueId);
+    if (!issue) {
+      setError("Issue not found.");
+      return;
+    }
+
+    if (!canManageIssueByAuthority(userRole, userAuthorityLevel, issue)) {
+      setError("This issue is assigned to a higher authority tier.");
+      return;
+    }
+
     setBusyIssueId(issueId);
     setError(null);
 
@@ -226,6 +241,11 @@ export function IssuesTable() {
 
     if (!canManageIssues) {
       setError("Only authority/admin users can submit resolutions.");
+      return;
+    }
+
+    if (!canManageIssueByAuthority(userRole, userAuthorityLevel, selectedIssue)) {
+      setError("This issue is assigned to a higher authority tier.");
       return;
     }
 
@@ -457,7 +477,7 @@ export function IssuesTable() {
             <button
               type="button"
               onClick={() => void updateIssueStatus(selectedIssue.id, "in_progress")}
-              disabled={!canManageIssues || busyIssueId === selectedIssue.id || selectedIssue.status === "in_progress"}
+              disabled={!canManageIssues || busyIssueId === selectedIssue.id || selectedIssue.status === "in_progress" || !canManageIssueByAuthority(userRole, userAuthorityLevel, selectedIssue)}
               className="btn-secondary px-3 py-2 text-sm"
             >
               {busyIssueId === selectedIssue.id ? "Working..." : "Mark In Progress"}
@@ -466,7 +486,7 @@ export function IssuesTable() {
             <button
               type="button"
               onClick={() => void submitResolution()}
-              disabled={!canManageIssues || busyIssueId === selectedIssue.id || selectedIssue.status === "resolved"}
+              disabled={!canManageIssues || busyIssueId === selectedIssue.id || selectedIssue.status === "resolved" || !canManageIssueByAuthority(userRole, userAuthorityLevel, selectedIssue)}
               className="btn-success px-3 py-2 text-sm"
             >
               {busyIssueId === selectedIssue.id ? "Submitting..." : "Mark Resolved"}

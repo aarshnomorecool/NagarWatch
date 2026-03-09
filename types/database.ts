@@ -1,4 +1,5 @@
 export type UserRole = "citizen" | "authority" | "admin";
+export type AuthorityLevel = "ward" | "zone" | "city" | "state";
 export type IssueStatus = "pending" | "in_progress" | "resolved";
 export type IssueEventType = "reported" | "upvote" | "downvote" | "priority" | "assigned" | "in_progress" | "resolved" | "comment" | "resolution_proof" | "reopened";
 export type IssueEventActor = "citizen" | "authority" | "system";
@@ -13,18 +14,21 @@ export type Database = {
           id: string;
           email: string;
           role: UserRole;
+          authority_level: AuthorityLevel | null;
           created_at: string;
         };
         Insert: {
           id?: string;
           email: string;
           role: UserRole;
+          authority_level?: AuthorityLevel | null;
           created_at?: string;
         };
         Update: {
           id?: string;
           email?: string;
           role?: UserRole;
+          authority_level?: AuthorityLevel | null;
           created_at?: string;
         };
         Relationships: [];
@@ -69,6 +73,9 @@ export type Database = {
           downvote_count: number;
           is_priority: boolean;
           sla_target_hours: number;
+          assigned_authority_level: AuthorityLevel;
+          escalation_level: number;
+          last_escalated_at: string | null;
           reopened_at: string | null;
           reopened_by: string | null;
           reopen_reason: string | null;
@@ -92,6 +99,9 @@ export type Database = {
           downvote_count?: number;
           is_priority?: boolean;
           sla_target_hours?: number;
+          assigned_authority_level?: AuthorityLevel;
+          escalation_level?: number;
+          last_escalated_at?: string | null;
           reopened_at?: string | null;
           reopened_by?: string | null;
           reopen_reason?: string | null;
@@ -115,6 +125,9 @@ export type Database = {
           downvote_count?: number;
           is_priority?: boolean;
           sla_target_hours?: number;
+          assigned_authority_level?: AuthorityLevel;
+          escalation_level?: number;
+          last_escalated_at?: string | null;
           reopened_at?: string | null;
           reopened_by?: string | null;
           reopen_reason?: string | null;
@@ -239,6 +252,7 @@ export type Database = {
           issue_id: string;
           escalation_level: number;
           escalated_to: string;
+          escalated_to_level: AuthorityLevel;
           created_at: string;
         };
         Insert: {
@@ -246,6 +260,7 @@ export type Database = {
           issue_id: string;
           escalation_level: number;
           escalated_to: string;
+          escalated_to_level: AuthorityLevel;
           created_at?: string;
         };
         Update: {
@@ -253,6 +268,7 @@ export type Database = {
           issue_id?: string;
           escalation_level?: number;
           escalated_to?: string;
+          escalated_to_level?: AuthorityLevel;
           created_at?: string;
         };
         Relationships: [];

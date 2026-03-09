@@ -39,7 +39,7 @@ export function IssueList({ statusFilter = "latest" }: IssueListProps) {
 
       let issuesQuery = supabase
         .from("issues")
-        .select("id,title,description,category,road_name,landmark,area_name,latitude,longitude,image_url,status,created_by,created_at,upvote_count,downvote_count,is_priority,sla_target_hours,reopened_at,reopened_by,reopen_reason,reopen_proof")
+        .select("id,title,description,category,road_name,landmark,area_name,latitude,longitude,image_url,status,created_by,created_at,upvote_count,downvote_count,is_priority,sla_target_hours,assigned_authority_level,escalation_level,last_escalated_at,reopened_at,reopened_by,reopen_reason,reopen_proof")
         .order("created_at", { ascending: false })
         .limit(8);
 
@@ -151,7 +151,7 @@ export function IssueList({ statusFilter = "latest" }: IssueListProps) {
     }
 
     if (!currentUserId) {
-      router.push(`/login?next=${encodeURIComponent("/")}`);
+      router.push(`/citizen/login?next=${encodeURIComponent("/")}`);
       return;
     }
 

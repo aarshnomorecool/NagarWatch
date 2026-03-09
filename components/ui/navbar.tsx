@@ -184,20 +184,20 @@ export function Navbar() {
     ? [
         { href: "/", label: "Home", icon: <HomeIcon /> },
         { href: "/map", label: "Map", icon: <MapIcon /> },
-        { href: "/login", label: "Account", icon: <UserIcon /> },
+        { href: "/citizen/login", label: "Account", icon: <UserIcon /> },
       ]
     : isAuthority
     ? [
         { href: "/admin/dashboard", label: "Home", icon: <HomeIcon /> },
         { href: "/map", label: "Map", icon: <MapIcon /> },
         { href: "/admin/issues", label: "Issues", icon: <PlusIcon /> },
-        { href: email ? "/account" : "/login", label: "Account", icon: <UserIcon /> },
+        { href: email ? "/account" : "/admin/login", label: "Account", icon: <UserIcon /> },
       ]
     : [
         { href: "/", label: "Home", icon: <HomeIcon /> },
         { href: "/map", label: "Map", icon: <MapIcon /> },
         { href: "/report", label: "Report", icon: <PlusIcon /> },
-        { href: email ? "/account" : "/login", label: "Account", icon: <UserIcon /> },
+        { href: email ? "/account" : "/citizen/login", label: "Account", icon: <UserIcon /> },
       ];
 
   return (

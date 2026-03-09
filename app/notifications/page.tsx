@@ -32,7 +32,7 @@ export default function NotificationsPage() {
         }
 
         if (!user) {
-          router.replace("/login");
+          router.replace("/citizen/login");
           return;
         }
 

@@ -8,6 +8,7 @@ create table if not exists public.users (
   id text primary key,
   email text not null unique,
   role text not null check (role in ('citizen', 'authority', 'admin')) default 'citizen',
+  authority_level text check (authority_level in ('ward', 'zone', 'city', 'state')),
   created_at timestamptz not null default now()
 );
 
@@ -21,6 +22,7 @@ create table if not exists public.profiles (
 create index if not exists idx_profiles_role on public.profiles(role);
 
 create index if not exists idx_users_role on public.users(role);
+create index if not exists idx_users_authority_level on public.users(authority_level);
 
 create or replace function public.current_user_role()
 returns text
@@ -65,7 +67,10 @@ create table if not exists public.issues (
   created_at timestamptz not null default now(),
   upvote_count integer not null default 0,
   downvote_count integer not null default 0,
-  is_priority boolean not null default false
+  is_priority boolean not null default false,
+  assigned_authority_level text not null default 'ward' check (assigned_authority_level in ('ward', 'zone', 'city', 'state')),
+  escalation_level integer not null default 0,
+  last_escalated_at timestamptz
 );
 
 alter table public.issues add column if not exists downvote_count integer not null default 0;
@@ -73,6 +78,10 @@ alter table public.issues add column if not exists is_priority boolean not null 
 alter table public.issues add column if not exists road_name text;
 alter table public.issues add column if not exists landmark text;
 alter table public.issues add column if not exists area_name text;
+alter table public.issues add column if not exists assigned_authority_level text not null default 'ward';
+alter table public.issues add column if not exists escalation_level integer not null default 0;
+alter table public.issues add column if not exists last_escalated_at timestamptz;
+alter table public.users add column if not exists authority_level text;
 
 create table if not exists public.upvotes (
   id uuid primary key default gen_random_uuid(),
@@ -120,8 +129,11 @@ create table if not exists public.escalations (
   issue_id uuid not null references public.issues(id) on delete cascade,
   escalation_level integer not null check (escalation_level between 1 and 3),
   escalated_to text not null,
+  escalated_to_level text not null check (escalated_to_level in ('ward', 'zone', 'city', 'state')),
   created_at timestamptz not null default now()
 );
+
+alter table public.escalations add column if not exists escalated_to_level text not null default 'ward';
 
 create unique index if not exists idx_escalations_issue_level_unique on public.escalations(issue_id, escalation_level);
 

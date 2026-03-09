@@ -56,7 +56,7 @@ function SignupPageContent() {
 
       if (!signupData.session) {
         setMessage("Account created. Please confirm your email using the link sent to your inbox, then login.");
-        router.push(`/login?role=${selectedRole}`);
+        router.push(selectedRole === "authority" || selectedRole === "admin" ? "/admin/login" : "/citizen/login");
         return;
       }
 
@@ -143,7 +143,7 @@ function SignupPageContent() {
       </form>
 
       <p className="text-sm text-slate-600">
-        Already have an account? <Link href="/login" className="font-medium text-blue-700 underline">Login</Link>
+        Already have an account? <Link href={selectedRole === "authority" ? "/admin/login" : "/citizen/login"} className="font-medium text-blue-700 underline">Login</Link>
       </p>
     </section>
   );
