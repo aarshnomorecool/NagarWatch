@@ -1,17 +1,33 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { ensureUserProfile } from "@/lib/user-profile";
-import { createIssueEvent } from "@/lib/issue-events";
 import { authorityLevelLabel, escalatedFromLevel, escalationLevelLabel, levelTitle } from "@/lib/authority-display";
 import { formatDate } from "@/lib/utils";
-import { notifyIssueFollowers, notifyIssueOwner } from "@/lib/notifications";
+import { getSlaState } from "@/lib/sla";
 import type { AuthorityLevel, DbEscalation, DbIssue, UserRole } from "@/types/database";
 
 type EscalationRow = DbEscalation & {
-  issue: Pick<DbIssue, "id" | "title" | "status" | "assigned_authority_level" | "created_by"> | null;
+  issue: Pick<DbIssue, "id" | "title" | "category" | "status" | "created_at" | "sla_target_hours" | "assigned_authority_level"> | null;
 };
+
+function getLevelBadgeStyle(level: AuthorityLevel) {
+  if (level === "ward") {
+    return { color: "#1e3a8a", background: "rgba(59, 130, 246, 0.2)", border: "1px solid rgba(59, 130, 246, 0.45)" };
+  }
+
+  if (level === "zone") {
+    return { color: "#854d0e", background: "rgba(234, 179, 8, 0.22)", border: "1px solid rgba(234, 179, 8, 0.5)" };
+  }
+
+  if (level === "city") {
+    return { color: "#7f1d1d", background: "rgba(248, 113, 113, 0.2)", border: "1px solid rgba(248, 113, 113, 0.5)" };
+  }
+
+  return { color: "#14532d", background: "rgba(34, 197, 94, 0.18)", border: "1px solid rgba(34, 197, 94, 0.45)" };
+}
 
 export function EscalationsPanel() {
   const [rows, setRows] = useState<EscalationRow[]>([]);
@@ -19,8 +35,6 @@ export function EscalationsPanel() {
   const [authorityLevel, setAuthorityLevel] = useState<AuthorityLevel | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [assignNote, setAssignNote] = useState<Record<string, string>>({});
-  const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -59,7 +73,7 @@ export function EscalationsPanel() {
         const { data: issuesData, error: issuesError } = issueIds.length > 0
           ? await supabase
               .from("issues")
-              .select("id,title,status,assigned_authority_level,created_by")
+              .select("id,title,category,status,created_at,sla_target_hours,assigned_authority_level")
               .in("id", issueIds)
           : { data: [], error: null };
 
@@ -110,154 +124,6 @@ export function EscalationsPanel() {
     return [];
   }, [rows, role, authorityLevel]);
 
-  const acceptEscalation = async (row: EscalationRow) => {
-    if (!row.issue) {
-      return;
-    }
-
-    setBusyId(row.id);
-    setError(null);
-
-    try {
-      const supabase = getSupabaseBrowserClientOrNull();
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
-      }
-
-      const { error: updateError } = await supabase.from("issues").update({ status: "in_progress" }).eq("id", row.issue.id);
-      if (updateError) {
-        throw new Error(updateError.message);
-      }
-
-      await createIssueEvent(supabase, {
-        issueId: row.issue.id,
-        eventType: "in_progress",
-        message: `${authorityLevelLabel(row.escalated_to_level)} accepted escalation`,
-        createdBy: "authority",
-      });
-
-      await notifyIssueFollowers(supabase, {
-        issueId: row.issue.id,
-        notificationType: "issue_authority_changed",
-        title: "Escalation accepted",
-        body: `Your issue \"${row.issue.title}\" is now being handled by ${authorityLevelLabel(row.escalated_to_level)}.`,
-      });
-
-      await notifyIssueOwner(supabase, {
-        userId: row.issue.created_by,
-        issueId: row.issue.id,
-        notificationType: "issue_authority_changed",
-        title: "Issue reassigned",
-        body: `Your issue \"${row.issue.title}\" has been assigned to ${authorityLevelLabel(row.escalated_to_level)}.`,
-      });
-
-      setRows((current) => current.map((item) => (item.id === row.id && item.issue ? { ...item, issue: { ...item.issue, status: "in_progress" } } : item)));
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not accept escalation.");
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const assignAction = async (row: EscalationRow) => {
-    if (!row.issue) {
-      return;
-    }
-
-    const note = (assignNote[row.id] ?? "").trim();
-    if (!note) {
-      setError("Enter an action note before assigning.");
-      return;
-    }
-
-    setBusyId(row.id);
-    setError(null);
-
-    try {
-      const supabase = getSupabaseBrowserClientOrNull();
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
-      }
-
-      await createIssueEvent(supabase, {
-        issueId: row.issue.id,
-        eventType: "assigned",
-        message: `Assigned action: ${note}`,
-        createdBy: "authority",
-      });
-
-      await notifyIssueFollowers(supabase, {
-        issueId: row.issue.id,
-        notificationType: "issue_authority_changed",
-        title: "New authority action assigned",
-        body: `Action assigned on your issue \"${row.issue.title}\": ${note}`,
-      });
-
-      await notifyIssueOwner(supabase, {
-        userId: row.issue.created_by,
-        issueId: row.issue.id,
-        notificationType: "issue_authority_changed",
-        title: "Authority action assigned",
-        body: `Action assigned on your issue \"${row.issue.title}\": ${note}`,
-      });
-
-      setAssignNote((current) => ({ ...current, [row.id]: "" }));
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not assign action.");
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const resolveIssue = async (row: EscalationRow) => {
-    if (!row.issue) {
-      return;
-    }
-
-    setBusyId(row.id);
-    setError(null);
-
-    try {
-      const supabase = getSupabaseBrowserClientOrNull();
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
-      }
-
-      const { error: statusError } = await supabase.from("issues").update({ status: "resolved" }).eq("id", row.issue.id);
-      if (statusError) {
-        throw new Error(statusError.message);
-      }
-
-      await createIssueEvent(supabase, {
-        issueId: row.issue.id,
-        eventType: "resolved",
-        message: "Authority resolved escalated issue",
-        createdBy: "authority",
-      });
-
-      await notifyIssueFollowers(supabase, {
-        issueId: row.issue.id,
-        notificationType: "issue_resolved",
-        title: "Issue resolved",
-        body: `Your issue \"${row.issue.title}\" has been resolved.`,
-      });
-
-      await notifyIssueOwner(supabase, {
-        userId: row.issue.created_by,
-        issueId: row.issue.id,
-        notificationType: "issue_resolved",
-        title: "Issue resolved",
-        body: `Your issue \"${row.issue.title}\" has been resolved.`,
-      });
-
-      setRows((current) => current.map((item) => (item.id === row.id && item.issue ? { ...item, issue: { ...item.issue, status: "resolved" } } : item)));
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Could not resolve issue.");
-    } finally {
-      setBusyId(null);
-    }
-  };
-
   if (loading) {
     return <section className="surface-card p-4 text-sm text-muted">Loading escalations...</section>;
   }
@@ -279,56 +145,73 @@ export function EscalationsPanel() {
         {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
         {visibleRows.length === 0 ? <p className="text-sm text-muted">No escalations available.</p> : null}
 
-        <div className="space-y-3">
-          {visibleRows.map((row) => {
-            const fromLevel = escalatedFromLevel(row.escalated_to_level);
-            return (
-              <article key={row.id} className="rounded-lg border p-3" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--accent) 14%, var(--surface))" }}>
-                <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>{row.issue?.title ?? row.issue_id}</p>
-                <p className="mt-1 text-xs text-muted">Escalation Level: {escalationLevelLabel(row.escalated_to_level)}</p>
-                <p className="mt-1 text-xs text-muted">Escalated To: {authorityLevelLabel(row.escalated_to_level)}</p>
-                <p className="mt-1 text-xs text-muted">Escalated From: {fromLevel ? authorityLevelLabel(fromLevel) : "-"}</p>
-                <p className="mt-1 text-xs text-muted">Time Escalated: {formatDate(row.created_at)}</p>
-                <p className="mt-1 text-xs text-muted">Status: {row.issue?.status ?? "-"}</p>
+        <div className="overflow-x-auto rounded-lg border" style={{ borderColor: "var(--border)" }}>
+          <table className="min-w-full text-sm">
+            <thead style={{ background: "color-mix(in srgb, var(--accent) 16%, transparent)" }}>
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">Issue</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">Category</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">Escalation Level</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">Escalated From</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">Escalated To</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">Time Escalated</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">Status</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">SLA / Time Left</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRows.map((row) => {
+                const fromLevel = escalatedFromLevel(row.escalated_to_level);
+                const issue = row.issue;
+                const slaState = issue ? getSlaState(issue) : null;
 
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="btn-secondary px-2.5 py-1 text-xs"
-                    disabled={busyId === row.id || !row.issue}
-                    onClick={() => void acceptEscalation(row)}
-                  >
-                    {busyId === row.id ? "Working..." : "Accept Escalation"}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary px-2.5 py-1 text-xs"
-                    disabled={busyId === row.id || !row.issue}
-                    onClick={() => void resolveIssue(row)}
-                  >
-                    Resolve Issue
-                  </button>
-                </div>
-
-                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                  <input
-                    className="input-base"
-                    placeholder="Assign action note"
-                    value={assignNote[row.id] ?? ""}
-                    onChange={(event) => setAssignNote((current) => ({ ...current, [row.id]: event.target.value }))}
-                  />
-                  <button
-                    type="button"
-                    className="btn-secondary px-2.5 py-1 text-xs"
-                    disabled={busyId === row.id || !row.issue}
-                    onClick={() => void assignAction(row)}
-                  >
-                    Assign Action
-                  </button>
-                </div>
-              </article>
-            );
-          })}
+                return (
+                  <tr key={row.id}>
+                    <td className="border-t px-3 py-2" style={{ borderColor: "var(--border)" }}>
+                      <p className="font-medium" style={{ color: "var(--text)" }}>{issue?.title ?? row.issue_id}</p>
+                    </td>
+                    <td className="border-t px-3 py-2" style={{ borderColor: "var(--border)" }}>{issue?.category ?? "-"}</td>
+                    <td className="border-t px-3 py-2" style={{ borderColor: "var(--border)" }}>
+                      <span className="inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold leading-none" style={getLevelBadgeStyle(row.escalated_to_level)}>
+                        {escalationLevelLabel(row.escalated_to_level)}
+                      </span>
+                    </td>
+                    <td className="border-t px-3 py-2" style={{ borderColor: "var(--border)" }}>{fromLevel ? authorityLevelLabel(fromLevel) : "-"}</td>
+                    <td className="border-t px-3 py-2" style={{ borderColor: "var(--border)" }}>{authorityLevelLabel(row.escalated_to_level)}</td>
+                    <td className="border-t px-3 py-2" style={{ borderColor: "var(--border)" }}>{formatDate(row.created_at)}</td>
+                    <td className="border-t px-3 py-2" style={{ borderColor: "var(--border)" }}>{issue?.status ?? "-"}</td>
+                    <td className="border-t px-3 py-2" style={{ borderColor: "var(--border)" }}>
+                      {slaState ? (
+                        <span
+                          className="inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold leading-none"
+                          style={
+                            slaState.isOverdue
+                              ? { color: "#7f1d1d", background: "rgba(248, 113, 113, 0.2)", border: "1px solid rgba(248, 113, 113, 0.5)" }
+                              : { color: "#14532d", background: "rgba(34, 197, 94, 0.18)", border: "1px solid rgba(34, 197, 94, 0.4)" }
+                          }
+                        >
+                          {slaState.label}
+                        </span>
+                      ) : "-"}
+                    </td>
+                    <td className="border-t px-3 py-2" style={{ borderColor: "var(--border)" }}>
+                      <Link href={issue ? `/issue/${issue.id}` : "#"} className="btn-secondary px-2.5 py-1 text-xs">
+                        Details
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+              {visibleRows.length === 0 ? (
+                <tr>
+                  <td className="border-t px-3 py-3 text-muted" style={{ borderColor: "var(--border)" }} colSpan={9}>
+                    No escalations available.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
       </section>
     </section>

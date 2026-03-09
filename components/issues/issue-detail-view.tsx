@@ -6,11 +6,12 @@ import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { formatDate } from "@/lib/utils";
 import { IssueComments } from "@/components/comments/issue-comments";
 import { createIssueEvent } from "@/lib/issue-events";
-import { notifyIssueFollowers } from "@/lib/notifications";
+import { notifyIssueFollowers, notifyIssueOwner } from "@/lib/notifications";
 import { getSlaState } from "@/lib/sla";
 import { ensureUserProfile } from "@/lib/user-profile";
 import { authorityLevelLabel, escalationLevelLabel } from "@/lib/authority-display";
-import type { DbIssue, DbResolution, UserRole } from "@/types/database";
+import { canManageIssueByAuthority } from "@/lib/authority";
+import type { AuthorityLevel, DbIssue, DbResolution, UserRole } from "@/types/database";
 
 type IssueDetailViewProps = {
   issueId: string;
@@ -58,6 +59,7 @@ function getStatusLabel(status: DbIssue["status"]) {
 export function IssueDetailView({ issueId }: IssueDetailViewProps) {
   const REOPEN_WINDOW_HOURS = 72;
   const REOPEN_PROOF_BUCKET = "resolution-proofs";
+  const RESOLUTION_BUCKET = "resolution-proofs";
 
   const [issue, setIssue] = useState<DbIssue | null>(null);
   const [upvoteCount, setUpvoteCount] = useState(0);
@@ -65,6 +67,7 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
   const [hasUpvoted, setHasUpvoted] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<UserRole | null>(null);
+  const [currentUserAuthorityLevel, setCurrentUserAuthorityLevel] = useState<AuthorityLevel | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isEscalated, setIsEscalated] = useState(false);
   const [resolution, setResolution] = useState<DbResolution | null>(null);
@@ -81,6 +84,9 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
   const [voteBusy, setVoteBusy] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [reopenBusy, setReopenBusy] = useState(false);
+  const [manageBusy, setManageBusy] = useState(false);
+  const [resolutionNote, setResolutionNote] = useState("");
+  const [resolutionFile, setResolutionFile] = useState<File | null>(null);
 
   const mapboxToken = useMemo(() => getMapboxToken(), []);
 
@@ -97,6 +103,7 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
       const profile = await ensureUserProfile();
       setCurrentUserId(profile?.id ?? null);
       setCurrentUserRole(profile?.role ?? null);
+      setCurrentUserAuthorityLevel(profile?.authority_level ?? null);
     };
 
     void resolveUserId();
@@ -530,6 +537,156 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
     );
   }
 
+  const canAuthorityManage = !!issue && canManageIssueByAuthority(currentUserRole, currentUserAuthorityLevel, issue);
+
+  const markIssueInProgress = async () => {
+    if (!issue || !canAuthorityManage || manageBusy) {
+      return;
+    }
+
+    setManageBusy(true);
+    setError(null);
+
+    try {
+      const supabase = getSupabaseBrowserClientOrNull();
+      if (!supabase) {
+        throw new Error("Supabase is not configured yet.");
+      }
+
+      const { error: updateError } = await supabase.from("issues").update({ status: "in_progress" }).eq("id", issue.id);
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      await createIssueEvent(supabase, {
+        issueId: issue.id,
+        eventType: "in_progress",
+        message: "Authority started working on issue",
+        createdBy: "authority",
+      });
+
+      await notifyIssueFollowers(supabase, {
+        issueId: issue.id,
+        notificationType: "issue_in_progress",
+        title: "Issue under process",
+        body: "Authority has started work on this issue.",
+      });
+
+      await notifyIssueOwner(supabase, {
+        userId: issue.created_by,
+        issueId: issue.id,
+        notificationType: "issue_authority_changed",
+        title: "Issue moved to processing",
+        body: `Your issue \"${issue.title}\" is now under process at ${authorityLevelLabel(issue.assigned_authority_level)}.`,
+      });
+
+      setIssue((current) => (current ? { ...current, status: "in_progress" } : current));
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not mark issue in progress.");
+    } finally {
+      setManageBusy(false);
+    }
+  };
+
+  const markIssueResolved = async () => {
+    if (!issue || !canAuthorityManage || manageBusy) {
+      return;
+    }
+
+    if (!resolutionNote.trim() || !resolutionFile) {
+      setError("Resolution note and proof photo are required.");
+      return;
+    }
+
+    setManageBusy(true);
+    setError(null);
+
+    try {
+      const supabase = getSupabaseBrowserClientOrNull();
+      if (!supabase) {
+        throw new Error("Supabase is not configured yet.");
+      }
+
+      const resolvedBy = currentUserId ?? issue.created_by;
+      const extension = resolutionFile.name.split(".").pop() || "jpg";
+      const path = `${issue.id}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
+
+      const { error: uploadError } = await supabase.storage.from(RESOLUTION_BUCKET).upload(path, resolutionFile, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+      if (uploadError) {
+        throw new Error(uploadError.message);
+      }
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from(RESOLUTION_BUCKET).getPublicUrl(path);
+
+      const { error: resolutionInsertError } = await supabase.from("resolutions").insert({
+        issue_id: issue.id,
+        resolved_by: resolvedBy,
+        proof_image: publicUrl,
+        resolution_note: resolutionNote.trim(),
+      });
+
+      if (resolutionInsertError) {
+        throw new Error(resolutionInsertError.message);
+      }
+
+      const { error: updateError } = await supabase.from("issues").update({ status: "resolved" }).eq("id", issue.id);
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      await createIssueEvent(supabase, {
+        issueId: issue.id,
+        eventType: "resolution_proof",
+        message: "Resolution proof image uploaded",
+        createdBy: "authority",
+      });
+
+      await createIssueEvent(supabase, {
+        issueId: issue.id,
+        eventType: "resolved",
+        message: "Authority marked issue as resolved",
+        createdBy: "authority",
+      });
+
+      await notifyIssueFollowers(supabase, {
+        issueId: issue.id,
+        actorUserId: resolvedBy,
+        notificationType: "issue_resolved",
+        title: "Issue resolved",
+        body: `${issue.title} was marked as resolved with proof uploaded.`,
+      });
+
+      await notifyIssueOwner(supabase, {
+        userId: issue.created_by,
+        issueId: issue.id,
+        notificationType: "issue_resolved",
+        title: "Issue resolved",
+        body: `Your issue \"${issue.title}\" has been resolved.`,
+      });
+
+      setIssue((current) => (current ? { ...current, status: "resolved" } : current));
+      setResolution({
+        id: resolution?.id ?? crypto.randomUUID(),
+        issue_id: issue.id,
+        resolved_by: resolvedBy,
+        proof_image: publicUrl,
+        resolution_note: resolutionNote.trim(),
+        resolved_at: new Date().toISOString(),
+      });
+      setResolutionNote("");
+      setResolutionFile(null);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not resolve issue.");
+    } finally {
+      setManageBusy(false);
+    }
+  };
+
   function CommentIcon() {
     return (
       <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -698,6 +855,54 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
           </div>
         </div>
       </div>
+
+      {(currentUserRole === "authority" || currentUserRole === "admin") ? (
+        <div className="surface-card p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Authority Actions</h2>
+
+          {!canAuthorityManage ? (
+            <p className="mt-2 text-xs text-muted">This issue is currently assigned to a higher authority tier.</p>
+          ) : (
+            <>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void markIssueInProgress()}
+                  disabled={manageBusy || issue.status === "in_progress" || issue.status === "resolved"}
+                  className="btn-secondary px-3 py-1.5 text-xs"
+                >
+                  {manageBusy ? "Working..." : "Mark In Progress"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void markIssueResolved()}
+                  disabled={manageBusy || issue.status === "resolved"}
+                  className="btn-success px-3 py-1.5 text-xs"
+                >
+                  {manageBusy ? "Submitting..." : "Mark Resolved"}
+                </button>
+              </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+                <input
+                  type="text"
+                  className="input-base"
+                  placeholder="Resolution note"
+                  value={resolutionNote}
+                  onChange={(event) => setResolutionNote(event.target.value)}
+                />
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="input-base"
+                  onChange={(event) => setResolutionFile(event.target.files?.[0] ?? null)}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
 
       {issue.status === "resolved" ? (
         <div className="surface-card p-4">
