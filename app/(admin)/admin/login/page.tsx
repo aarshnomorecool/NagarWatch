@@ -5,6 +5,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClientOrNull } from "@/lib/supabase";
 import { ensureUserProfile, getAuthorityRoleAssignmentByEmail } from "@/lib/user-profile";
+import type { Database } from "@/types/database";
 
 export default function AdminLoginPage() {
   return (
@@ -44,14 +45,74 @@ function AdminLoginPageContent() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      const assignment = user?.email ? await getAuthorityRoleAssignmentByEmail(user.email) : null;
+      if (!user?.email) {
+        throw new Error("Authenticated user email not found.");
+      }
+
+      const normalizedEmail = user.email.trim().toLowerCase();
+
+      const assignment = await getAuthorityRoleAssignmentByEmail(normalizedEmail);
+
+      // Backward-compatible recovery: honor existing users.role admin/authority even without authority_roles rows.
+      const { data: existingUser } = await supabase
+        .from("users")
+        .select("id,email,username,role,authority_level")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      const legacyRole = existingUser?.role;
+      const legacyAuthorityLevel = existingUser?.authority_level ?? "state";
+      const legacyUsername = existingUser?.username ?? normalizedEmail.split("@")[0];
+
+      let resolvedAssignment = assignment;
+
+      // Bootstrap path: if no role assignments exist yet, first successful admin login self-provisions.
+      if (!resolvedAssignment) {
+        const { count, error: roleCountError } = await supabase
+          .from("authority_roles")
+          .select("id", { count: "exact", head: true });
+
+        const noRolesConfigured = !roleCountError && (count ?? 0) === 0;
+        const rolesTableMissing = !!roleCountError && roleCountError.message.toLowerCase().includes("authority_roles");
+
+        if (noRolesConfigured || rolesTableMissing) {
+          const bootstrapPayload: Database["public"]["Tables"]["authority_roles"]["Insert"] = {
+            email: normalizedEmail,
+            username: legacyUsername,
+            role: "admin",
+            authority_level: legacyAuthorityLevel,
+            active: true,
+            created_by: user.id,
+          };
+
+          const { error: upsertBootstrapError } = await supabase
+            .from("authority_roles")
+            .upsert(bootstrapPayload, { onConflict: "email" });
+
+          if (!upsertBootstrapError) {
+            resolvedAssignment = {
+              email: normalizedEmail,
+              username: legacyUsername,
+              role: "admin",
+              authority_level: legacyAuthorityLevel,
+              active: true,
+            };
+          }
+        }
+      }
 
       const profile = await ensureUserProfile(
-        assignment
+        resolvedAssignment
           ? {
-              preferredRole: assignment.role,
-              preferredAuthorityLevel: assignment.authority_level,
-              preferredUsername: assignment.username,
+              preferredRole: resolvedAssignment.role,
+              preferredAuthorityLevel: resolvedAssignment.authority_level,
+              preferredUsername: resolvedAssignment.username,
+            }
+          : legacyRole === "admin" || legacyRole === "authority"
+          ? {
+              preferredRole: legacyRole,
+              preferredAuthorityLevel: legacyAuthorityLevel,
+              preferredUsername: legacyUsername,
             }
           : undefined,
       );
