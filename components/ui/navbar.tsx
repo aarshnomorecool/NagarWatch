@@ -195,7 +195,6 @@ export function Navbar() {
       ]
     : [
         { href: "/", label: "Home", icon: <HomeIcon /> },
-        { href: "/citizen/reports", label: "Reports", icon: <PlusIcon /> },
         { href: "/map", label: "Map", icon: <MapIcon /> },
         { href: "/report", label: "Report", icon: <PlusIcon /> },
         { href: email ? "/account" : "/citizen/login", label: "Account", icon: <UserIcon /> },

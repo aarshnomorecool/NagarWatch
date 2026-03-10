@@ -11,6 +11,7 @@ import { getSlaState } from "@/lib/sla";
 import { ensureUserProfile } from "@/lib/user-profile";
 import { authorityLevelLabel, escalationLevelLabel } from "@/lib/authority-display";
 import { canManageIssueByAuthority } from "@/lib/authority";
+import { handleIssueUpvoted, handleVerificationSubmitted } from "@/lib/civic-integration";
 import type { AuthorityLevel, DbIssue, DbResolution, UserRole, VerificationVerdict } from "@/types/database";
 
 type IssueDetailViewProps = {
@@ -589,6 +590,10 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
       setMyVerification(verdict);
       setVerificationCounts(counts);
 
+      // Award points for verification
+      const profile = await ensureUserProfile();
+      void handleVerificationSubmitted(supabase, issue.id, currentUserId, verdict, profile?.email || undefined);
+
       if (counts.not_fixed >= VERIFICATION_REOPEN_THRESHOLD && issue.status === "resolved") {
         const nowIso = new Date().toISOString();
         const { error: reopenError } = await supabase
@@ -681,6 +686,10 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
           message: "Citizen upvoted issue",
           createdBy: "citizen",
         });
+
+        // Award points for upvoting
+        const profile = await ensureUserProfile();
+        void handleIssueUpvoted(supabase, issueId, currentUserId, profile?.email || undefined);
 
         setHasUpvoted(true);
       }

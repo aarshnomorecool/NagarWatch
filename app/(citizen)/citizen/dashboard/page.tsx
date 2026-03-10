@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { IssueList } from "@/components/issues/issue-list";
+import { CivicLeaderboardPanel } from "@/components/civic/leaderboard-panel";
+import { InfrastructureRiskPanel } from "@/components/civic/infrastructure-risk-panel";
+import { CivicAlertsFeed } from "@/components/admin/civic-alerts-feed";
 
 export default function CitizenDashboardPage() {
   return (
@@ -15,9 +18,19 @@ export default function CitizenDashboardPage() {
         </div>
       </header>
 
-      <section className="space-y-2">
-        <h2 className="text-lg font-semibold" style={{ color: "var(--text)" }}>Active Issues</h2>
-        <IssueList />
+      <section className="grid gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-2">
+          <h2 className="text-lg font-semibold" style={{ color: "var(--text)" }}>Active Issues</h2>
+          <IssueList />
+        </div>
+        <div className="space-y-5">
+          <CivicLeaderboardPanel limit={5} showMyRank={true} />
+        </div>
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-2">
+        <CivicAlertsFeed />
+        <InfrastructureRiskPanel showAllRisks={true} />
       </section>
     </section>
   );

@@ -451,6 +451,144 @@ export type Database = {
         };
         Relationships: [];
       };
+      citizen_scores: {
+        Row: {
+          id: string;
+          user_id: string;
+          username: string | null;
+          total_points: number;
+          verified_reports_count: number;
+          reports_count: number;
+          upvotes_given: number;
+          verifications_given: number;
+          last_activity_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          username?: string | null;
+          total_points?: number;
+          verified_reports_count?: number;
+          reports_count?: number;
+          upvotes_given?: number;
+          verifications_given?: number;
+          last_activity_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          username?: string | null;
+          total_points?: number;
+          verified_reports_count?: number;
+          reports_count?: number;
+          upvotes_given?: number;
+          verifications_given?: number;
+          last_activity_at?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      citizen_point_transactions: {
+        Row: {
+          id: string;
+          user_id: string;
+          points: number;
+          transaction_type: string;
+          reference_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          points: number;
+          transaction_type: string;
+          reference_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          points?: number;
+          transaction_type?: string;
+          reference_id?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      infrastructure_risk_zones: {
+        Row: {
+          id: string;
+          latitude: number;
+          longitude: number;
+          radius_meters: number;
+          risk_type: string;
+          risk_level: string;
+          issue_count: number;
+          last_issue_at: string | null;
+          detected_at: string;
+          updated_at: string;
+          description: string | null;
+        };
+        Insert: {
+          id?: string;
+          latitude: number;
+          longitude: number;
+          radius_meters?: number;
+          risk_type?: string;
+          risk_level?: string;
+          issue_count?: number;
+          last_issue_at?: string | null;
+          detected_at?: string;
+          updated_at?: string;
+          description?: string | null;
+        };
+        Update: {
+          id?: string;
+          latitude?: number;
+          longitude?: number;
+          radius_meters?: number;
+          risk_type?: string;
+          risk_level?: string;
+          issue_count?: number;
+          last_issue_at?: string | null;
+          detected_at?: string;
+          updated_at?: string;
+          description?: string | null;
+        };
+        Relationships: [];
+      };
+      risk_zone_thresholds: {
+        Row: {
+          id: string;
+          category: string;
+          min_reports_for_zone: number;
+          radius_meters: number;
+          risk_type: string;
+          risk_level_threshold: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          category: string;
+          min_reports_for_zone: number;
+          radius_meters: number;
+          risk_type: string;
+          risk_level_threshold: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          category?: string;
+          min_reports_for_zone?: number;
+          radius_meters?: number;
+          risk_type?: string;
+          risk_level_threshold?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -481,3 +619,7 @@ export type DbIssueFollow = Database["public"]["Tables"]["issue_follows"]["Row"]
 export type DbNotification = Database["public"]["Tables"]["notifications"]["Row"];
 export type DbIssueVerification = Database["public"]["Tables"]["issue_verifications"]["Row"];
 export type DbAlert = Database["public"]["Tables"]["alerts"]["Row"];
+export type DbCitizenScore = Database["public"]["Tables"]["citizen_scores"]["Row"];
+export type DbCitizenPointTransaction = Database["public"]["Tables"]["citizen_point_transactions"]["Row"];
+export type DbInfrastructureRiskZone = Database["public"]["Tables"]["infrastructure_risk_zones"]["Row"];
+export type DbRiskZoneThreshold = Database["public"]["Tables"]["risk_zone_thresholds"]["Row"];

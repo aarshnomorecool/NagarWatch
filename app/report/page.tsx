@@ -7,6 +7,7 @@ import { getMapboxToken } from "@/lib/mapbox";
 import { createIssueEvent } from "@/lib/issue-events";
 import { findPotentialDuplicates, type DuplicateCandidate } from "@/lib/duplicate-detection";
 import { ensureUserProfile, getCurrentUserRole } from "@/lib/user-profile";
+import { handleIssueReported } from "@/lib/civic-integration";
 
 const ISSUE_IMAGE_BUCKET = "issue-images";
 
@@ -293,6 +294,39 @@ export default function ReportPage() {
           createdBy: "system",
         });
       }
+
+      // Trigger civic integration: award points and detect risk zones
+      void handleIssueReported(
+        supabase,
+        {
+          id: insertedIssue.id,
+          title,
+          description,
+          category,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          image_url: publicUrl,
+          status: "pending",
+          created_by: createdBy,
+          created_at: new Date().toISOString(),
+          upvote_count: 0,
+          downvote_count: 0,
+          is_priority: isCriticalHazard,
+          sla_target_hours: 24,
+          assigned_authority_level: isCriticalHazard ? "zone" : "ward",
+          escalation_level: isCriticalHazard ? 1 : 0,
+          last_escalated_at: null,
+          reopened_at: null,
+          reopened_by: null,
+          reopen_reason: null,
+          reopen_proof: null,
+          road_name: null,
+          landmark: null,
+          area_name: null,
+        } as any,
+        createdBy,
+        profile?.email || undefined
+      );
 
       setDuplicateCandidates([]);
       setConfirmedDuplicateOverride(false);

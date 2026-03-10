@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getAuthUserSafe, getSupabaseBrowserClientOrNull } from "@/lib/supabase";
@@ -238,6 +239,14 @@ function AccountPageContent() {
             })}
           </div>
         )}
+      </div>
+
+      <div className="surface-card space-y-3 p-5">
+        <h2 className="text-base font-semibold" style={{ color: "var(--text)" }}>My Reports</h2>
+        <p className="text-sm" style={{ color: "var(--muted)" }}>View and manage all your submitted complaints.</p>
+        <Link href="/citizen/reports" className="btn-secondary w-full py-2.5 text-center">
+          View My Reports
+        </Link>
       </div>
 
       <div className="surface-card space-y-3 p-5">
