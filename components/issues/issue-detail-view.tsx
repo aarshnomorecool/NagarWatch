@@ -11,7 +11,7 @@ import { getSlaState } from "@/lib/sla";
 import { ensureUserProfile } from "@/lib/user-profile";
 import { authorityLevelLabel, escalationLevelLabel } from "@/lib/authority-display";
 import { canManageIssueByAuthority } from "@/lib/authority";
-import type { AuthorityLevel, DbIssue, DbResolution, UserRole } from "@/types/database";
+import type { AuthorityLevel, DbIssue, DbResolution, UserRole, VerificationVerdict } from "@/types/database";
 
 type IssueDetailViewProps = {
   issueId: string;
@@ -56,8 +56,28 @@ function getStatusLabel(status: DbIssue["status"]) {
   return "Pending";
 }
 
+function levelStepIndex(level: AuthorityLevel) {
+  if (level === "ward") return 1;
+  if (level === "zone") return 2;
+  if (level === "city") return 3;
+  return 4;
+}
+
+function verdictLabel(verdict: VerificationVerdict) {
+  if (verdict === "fully_fixed") return "Fully Fixed";
+  if (verdict === "partially_fixed") return "Partially Fixed";
+  return "Not Fixed";
+}
+
+function verdictIcon(verdict: VerificationVerdict) {
+  if (verdict === "fully_fixed") return "✔";
+  if (verdict === "partially_fixed") return "⚠";
+  return "✖";
+}
+
 export function IssueDetailView({ issueId }: IssueDetailViewProps) {
   const REOPEN_WINDOW_HOURS = 72;
+  const VERIFICATION_REOPEN_THRESHOLD = 3;
   const REOPEN_PROOF_BUCKET = "resolution-proofs";
   const RESOLUTION_BUCKET = "resolution-proofs";
 
@@ -71,6 +91,13 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isEscalated, setIsEscalated] = useState(false);
   const [resolution, setResolution] = useState<DbResolution | null>(null);
+  const [myVerification, setMyVerification] = useState<VerificationVerdict | null>(null);
+  const [verificationNote, setVerificationNote] = useState("");
+  const [verificationCounts, setVerificationCounts] = useState<Record<VerificationVerdict, number>>({
+    fully_fixed: 0,
+    partially_fixed: 0,
+    not_fixed: 0,
+  });
   const [reopenReason, setReopenReason] = useState("");
   const [reopenFile, setReopenFile] = useState<File | null>(null);
   const [stageTimes, setStageTimes] = useState<{
@@ -84,6 +111,7 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
   const [voteBusy, setVoteBusy] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [reopenBusy, setReopenBusy] = useState(false);
+  const [verificationBusy, setVerificationBusy] = useState(false);
   const [manageBusy, setManageBusy] = useState(false);
   const [resolutionNote, setResolutionNote] = useState("");
   const [resolutionFile, setResolutionFile] = useState<File | null>(null);
@@ -141,7 +169,7 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
 
       setIssue(issueData);
 
-      const [{ count: totalCount }, { count: totalComments }, { data: escalationRows }, { data: stageEvents }, { data: resolutionRow }, { count: myUpvoteCount }, { count: myFollowCount }] = await Promise.all([
+      const [{ count: totalCount }, { count: totalComments }, { data: escalationRows }, { data: stageEvents }, { data: resolutionRow }, { count: myUpvoteCount }, { count: myFollowCount }, { data: verificationRows }] = await Promise.all([
         supabase.from("upvotes").select("id", { count: "exact", head: true }).eq("issue_id", issueId),
         supabase.from("comments").select("id", { count: "exact", head: true }).eq("issue_id", issueId),
         supabase.from("escalations").select("created_at").eq("issue_id", issueId).order("created_at", { ascending: true }),
@@ -164,6 +192,7 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
         currentUserId
           ? supabase.from("issue_follows").select("id", { count: "exact", head: true }).eq("issue_id", issueId).eq("user_id", currentUserId)
           : Promise.resolve({ count: 0, error: null }),
+        supabase.from("issue_verifications").select("user_id,verdict").eq("issue_id", issueId),
       ]);
 
       if (!active) {
@@ -188,6 +217,15 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
       setResolution(resolutionRow ?? null);
       setHasUpvoted((myUpvoteCount ?? 0) > 0);
       setIsFollowing((myFollowCount ?? 0) > 0);
+      const counts = (verificationRows ?? []).reduce<Record<VerificationVerdict, number>>((acc, row) => {
+        const verdict = row.verdict as VerificationVerdict;
+        if (verdict in acc) {
+          acc[verdict] += 1;
+        }
+        return acc;
+      }, { fully_fixed: 0, partially_fixed: 0, not_fixed: 0 });
+      setVerificationCounts(counts);
+      setMyVerification((verificationRows ?? []).find((row) => row.user_id === currentUserId)?.verdict as VerificationVerdict ?? null);
       setLoading(false);
     };
 
@@ -200,6 +238,36 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
 
     const channel = supabase
       .channel(`issue-votes-${issueId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "issue_verifications",
+          filter: `issue_id=eq.${issueId}`,
+        },
+        async () => {
+          const { data: verificationRows } = await supabase
+            .from("issue_verifications")
+            .select("user_id,verdict")
+            .eq("issue_id", issueId);
+
+          if (!active) {
+            return;
+          }
+
+          const counts = (verificationRows ?? []).reduce<Record<VerificationVerdict, number>>((acc, row) => {
+            const verdict = row.verdict as VerificationVerdict;
+            if (verdict in acc) {
+              acc[verdict] += 1;
+            }
+            return acc;
+          }, { fully_fixed: 0, partially_fixed: 0, not_fixed: 0 });
+
+          setVerificationCounts(counts);
+          setMyVerification((verificationRows ?? []).find((row) => row.user_id === currentUserId)?.verdict as VerificationVerdict ?? null);
+        }
+      )
       .on(
         "postgres_changes",
         {
@@ -455,6 +523,119 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
       setError(caughtError instanceof Error ? caughtError.message : "Could not reopen issue.");
     } finally {
       setReopenBusy(false);
+    }
+  };
+
+  const submitVerification = async (verdict: VerificationVerdict) => {
+    if (!currentUserId || !issue || issue.status !== "resolved" || verificationBusy) {
+      return;
+    }
+
+    if (currentUserRole !== "citizen") {
+      setError("Only citizens can verify resolution quality.");
+      return;
+    }
+
+    setVerificationBusy(true);
+    setError(null);
+
+    try {
+      const supabase = getSupabaseBrowserClientOrNull();
+      if (!supabase) {
+        throw new Error("Supabase is not configured yet.");
+      }
+
+      const note = verificationNote.trim();
+      const { error: upsertError } = await supabase
+        .from("issue_verifications")
+        .upsert(
+          {
+            issue_id: issue.id,
+            user_id: currentUserId,
+            verdict,
+            note: note || null,
+          },
+          { onConflict: "issue_id,user_id" },
+        );
+
+      if (upsertError) {
+        throw new Error(upsertError.message);
+      }
+
+      await createIssueEvent(supabase, {
+        issueId: issue.id,
+        eventType: "comment",
+        message: `Citizen verification: ${verdictLabel(verdict)}`,
+        createdBy: "citizen",
+      });
+
+      const { data: verificationRows, error: verificationError } = await supabase
+        .from("issue_verifications")
+        .select("verdict")
+        .eq("issue_id", issue.id);
+
+      if (verificationError) {
+        throw new Error(verificationError.message);
+      }
+
+      const counts = (verificationRows ?? []).reduce<Record<VerificationVerdict, number>>((acc, row) => {
+        const rowVerdict = row.verdict as VerificationVerdict;
+        if (rowVerdict in acc) {
+          acc[rowVerdict] += 1;
+        }
+        return acc;
+      }, { fully_fixed: 0, partially_fixed: 0, not_fixed: 0 });
+
+      setMyVerification(verdict);
+      setVerificationCounts(counts);
+
+      if (counts.not_fixed >= VERIFICATION_REOPEN_THRESHOLD && issue.status === "resolved") {
+        const nowIso = new Date().toISOString();
+        const { error: reopenError } = await supabase
+          .from("issues")
+          .update({
+            status: "pending",
+            reopened_at: nowIso,
+            reopened_by: currentUserId,
+            reopen_reason: "Auto-reopened after 3 Not Fixed citizen verifications.",
+            reopen_proof: null,
+          })
+          .eq("id", issue.id)
+          .eq("status", "resolved");
+
+        if (reopenError) {
+          throw new Error(reopenError.message);
+        }
+
+        await createIssueEvent(supabase, {
+          issueId: issue.id,
+          eventType: "reopened",
+          message: "System auto-reopened issue after repeated Not Fixed verifications",
+          createdBy: "system",
+        });
+
+        await notifyIssueFollowers(supabase, {
+          issueId: issue.id,
+          actorUserId: currentUserId,
+          notificationType: "issue_reopened",
+          title: "Issue auto-reopened",
+          body: `${issue.title} was reopened after repeated citizen verification failures.`,
+        });
+
+        await notifyIssueOwner(supabase, {
+          userId: issue.created_by,
+          issueId: issue.id,
+          notificationType: "issue_reopened",
+          title: "Issue reopened",
+          body: `Your issue \"${issue.title}\" was reopened after 3 Not Fixed citizen verifications.`,
+        });
+
+        setIssue((prev) => (prev ? { ...prev, status: "pending", reopened_at: nowIso, reopened_by: currentUserId } : prev));
+      }
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Could not submit verification.");
+    } finally {
+      setVerificationBusy(false);
     }
   };
 
@@ -738,6 +919,15 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
       : { label: "Escalated", timestamp: stageTimes.escalated };
   const slaState = getSlaState(issue);
   const canReopen = issue.status === "resolved" && currentUserRole === "citizen";
+  const lifecycleStep = issue.status === "resolved" ? 5 : levelStepIndex(issue.assigned_authority_level);
+  const lifecycle = [
+    { label: "Reported", icon: "●" },
+    { label: "Ward", icon: "W" },
+    { label: "Zone", icon: "Z" },
+    { label: "City", icon: "C" },
+    { label: "State", icon: "S" },
+    { label: "Resolved", icon: "✔" },
+  ];
 
   return (
     <section className="mx-auto w-full max-w-3xl space-y-4">
@@ -845,6 +1035,25 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
 
       <div className="surface-card p-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Issue Progress</h2>
+        <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
+          {lifecycle.map((step, index) => {
+            const isActive = index <= lifecycleStep;
+            return (
+              <div
+                key={step.label}
+                className="rounded-xl border px-2 py-2 text-center"
+                style={
+                  isActive
+                    ? { borderColor: "color-mix(in srgb, var(--accent) 45%, transparent)", background: "color-mix(in srgb, var(--accent) 16%, transparent)", color: "var(--text)" }
+                    : { borderColor: "var(--border)", background: "transparent", color: "var(--muted)" }
+                }
+              >
+                <p className="text-xs font-semibold">{step.icon}</p>
+                <p className="text-[11px] leading-tight">{step.label}</p>
+              </div>
+            );
+          })}
+        </div>
         <div className="mt-3 relative pl-6">
           <span className="absolute left-0 top-0 text-xs" style={{ color: "var(--primary)" }} aria-hidden="true">-&gt;</span>
           <div>
@@ -927,6 +1136,45 @@ export function IssueDetailView({ issueId }: IssueDetailViewProps) {
           <p className="mt-2 text-xs text-muted">
             {resolution?.resolved_at ? `Resolved on ${formatDate(resolution.resolved_at)}` : "Marked resolved recently."}
           </p>
+
+          <div className="mt-4 rounded-xl border p-3" style={{ borderColor: "var(--border)" }}>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Citizen Verification Layer</p>
+            <p className="mt-1 text-xs text-muted">Was this issue resolved properly?</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {([
+                "fully_fixed",
+                "partially_fixed",
+                "not_fixed",
+              ] as VerificationVerdict[]).map((verdict) => (
+                <button
+                  key={verdict}
+                  type="button"
+                  onClick={() => void submitVerification(verdict)}
+                  disabled={verificationBusy || !currentUserId || currentUserRole !== "citizen"}
+                  className="btn-secondary px-2.5 py-1.5 text-xs"
+                  style={myVerification === verdict ? { borderColor: "var(--accent)", background: "color-mix(in srgb, var(--accent) 18%, transparent)" } : undefined}
+                >
+                  {verdictIcon(verdict)} {verdictLabel(verdict)}
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={verificationNote}
+              onChange={(event) => setVerificationNote(event.target.value)}
+              placeholder="Optional note"
+              className="input-base mt-2"
+              rows={2}
+              disabled={verificationBusy || !currentUserId || currentUserRole !== "citizen"}
+            />
+            <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted">
+              <span className="rounded-full border px-2 py-1" style={{ borderColor: "var(--border)" }}>✔ {verificationCounts.fully_fixed}</span>
+              <span className="rounded-full border px-2 py-1" style={{ borderColor: "var(--border)" }}>⚠ {verificationCounts.partially_fixed}</span>
+              <span className="rounded-full border px-2 py-1" style={{ borderColor: "var(--border)" }}>✖ {verificationCounts.not_fixed}</span>
+              <span className="rounded-full border px-2 py-1" style={{ borderColor: "var(--border)" }}>
+                Auto-reopen at {VERIFICATION_REOPEN_THRESHOLD} ✖ votes
+              </span>
+            </div>
+          </div>
 
           {canReopen ? (
             <div className="mt-4 space-y-2">

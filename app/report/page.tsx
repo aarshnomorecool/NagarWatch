@@ -15,6 +15,8 @@ type Coordinates = {
   longitude: number;
 };
 
+const CRITICAL_HAZARD_CATEGORIES = new Set(["open_drain", "electric_wire", "road_collapse", "major_pothole"]);
+
 export default function ReportPage() {
   const router = useRouter();
 
@@ -251,6 +253,8 @@ export default function ReportPage() {
         data: { publicUrl },
       } = supabase.storage.from(ISSUE_IMAGE_BUCKET).getPublicUrl(fileName);
 
+      const isCriticalHazard = CRITICAL_HAZARD_CATEGORIES.has(category);
+
       const { data: insertedIssue, error: insertError } = await supabase
         .from("issues")
         .insert({
@@ -263,6 +267,9 @@ export default function ReportPage() {
           status: "pending",
           created_by: createdBy,
           upvote_count: 0,
+          is_priority: isCriticalHazard,
+          assigned_authority_level: isCriticalHazard ? "zone" : "ward",
+          escalation_level: isCriticalHazard ? 1 : 0,
         })
         .select("id")
         .single();
@@ -277,6 +284,15 @@ export default function ReportPage() {
         message: "Issue reported by citizen",
         createdBy: "citizen",
       });
+
+      if (isCriticalHazard) {
+        await createIssueEvent(supabase, {
+          issueId: insertedIssue.id,
+          eventType: "priority",
+          message: "Critical hazard auto-prioritized to zone authority",
+          createdBy: "system",
+        });
+      }
 
       setDuplicateCandidates([]);
       setConfirmedDuplicateOverride(false);
@@ -346,6 +362,10 @@ export default function ReportPage() {
             <option value="garbage">Garbage</option>
             <option value="streetlight">Broken Streetlight</option>
             <option value="water">Water Leakage</option>
+            <option value="open_drain">Open Drain (Critical)</option>
+            <option value="electric_wire">Exposed Electric Wire (Critical)</option>
+            <option value="road_collapse">Road Collapse (Critical)</option>
+            <option value="major_pothole">Major Pothole (Critical)</option>
             <option value="other">Other</option>
           </select>
         </div>

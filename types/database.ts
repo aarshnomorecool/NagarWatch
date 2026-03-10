@@ -1,6 +1,7 @@
 export type UserRole = "citizen" | "authority" | "admin";
 export type AuthorityLevel = "ward" | "zone" | "city" | "state";
 export type IssueStatus = "pending" | "in_progress" | "resolved";
+export type VerificationVerdict = "fully_fixed" | "partially_fixed" | "not_fixed";
 export type IssueEventType = "reported" | "upvote" | "downvote" | "priority" | "assigned" | "in_progress" | "resolved" | "comment" | "resolution_proof" | "reopened";
 export type IssueEventActor = "citizen" | "authority" | "system";
 
@@ -390,6 +391,66 @@ export type Database = {
         };
         Relationships: [];
       };
+      issue_verifications: {
+        Row: {
+          id: string;
+          issue_id: string;
+          user_id: string;
+          verdict: VerificationVerdict;
+          note: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          issue_id: string;
+          user_id: string;
+          verdict: VerificationVerdict;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          issue_id?: string;
+          user_id?: string;
+          verdict?: VerificationVerdict;
+          note?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      alerts: {
+        Row: {
+          id: string;
+          title: string;
+          message: string;
+          lat: number;
+          lng: number;
+          radius_km: number;
+          authority_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          title: string;
+          message: string;
+          lat: number;
+          lng: number;
+          radius_km: number;
+          authority_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          title?: string;
+          message?: string;
+          lat?: number;
+          lng?: number;
+          radius_km?: number;
+          authority_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -418,3 +479,5 @@ export type DbEscalation = Database["public"]["Tables"]["escalations"]["Row"];
 export type DbIssueEvent = Database["public"]["Tables"]["issue_events"]["Row"];
 export type DbIssueFollow = Database["public"]["Tables"]["issue_follows"]["Row"];
 export type DbNotification = Database["public"]["Tables"]["notifications"]["Row"];
+export type DbIssueVerification = Database["public"]["Tables"]["issue_verifications"]["Row"];
+export type DbAlert = Database["public"]["Tables"]["alerts"]["Row"];
