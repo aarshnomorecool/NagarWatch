@@ -250,6 +250,14 @@ function AccountPageContent() {
       </div>
 
       <div className="surface-card space-y-3 p-5">
+        <h2 className="text-base font-semibold" style={{ color: "var(--text)" }}>Civic Leaderboard</h2>
+        <p className="text-sm" style={{ color: "var(--muted)" }}>See where you stand in the community and compete with other citizens.</p>
+        <Link href="/leaderboard" className="btn-secondary w-full py-2.5 text-center">
+          See Leaderboard
+        </Link>
+      </div>
+
+      <div className="surface-card space-y-3 p-5">
         <h2 className="text-base font-semibold" style={{ color: "var(--text)" }}>Notifications</h2>
         {notifications.length === 0 ? <p className="text-sm text-muted">No notifications yet.</p> : null}
 
