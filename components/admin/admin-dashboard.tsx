@@ -23,10 +23,12 @@ import { ensureUserProfile, getCurrentUserRole, readRememberedAuthorityLevel } f
 import {
   categoryChartData,
   computeDepartmentResolutionRates,
+  computeDepartmentScores,
   escalationChartData,
   pendingDurationDays,
   pendingDurationHours,
   sortIssues,
+  type DepartmentScoreDatum,
   type DepartmentChartDatum,
 } from "@/lib/admin-dashboard";
 import { getSlaState } from "@/lib/sla";
@@ -295,6 +297,10 @@ export function AdminDashboard() {
   const departmentAnalytics: DepartmentChartDatum[] = useMemo(
     () => computeDepartmentResolutionRates(issues, departments),
     [issues, departments]
+  );
+  const departmentScores: DepartmentScoreDatum[] = useMemo(
+    () => computeDepartmentScores(issues, escalations, departments),
+    [issues, escalations, departments]
   );
 
   const flaggedDepartments = useMemo(() => departmentAnalytics.filter((department) => department.isFlagged), [departmentAnalytics]);
@@ -575,6 +581,28 @@ export function AdminDashboard() {
             </ResponsiveContainer>
           </div>
         </article>
+      </section>
+
+      <section className="surface-card p-4">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold" style={{ color: "var(--text)" }}>Department Reputation Score</h2>
+          <span className="rounded-full border px-2 py-1 text-[11px]" style={{ borderColor: "var(--border)" }}>Objective Metrics</span>
+        </div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {departmentScores.map((department) => (
+            <article key={department.name} className="rounded-lg border p-3" style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--accent) 8%, var(--bg))" }}>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>{department.name}</p>
+                <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ background: "color-mix(in srgb, #22c55e 20%, transparent)", color: "#14532d", border: "1px solid rgba(34, 197, 94, 0.45)" }}>
+                  {department.score}/100
+                </span>
+              </div>
+              <p className="mt-2 text-xs text-muted">Resolution Rate: {department.resolutionRate}%</p>
+              <p className="mt-1 text-xs text-muted">Avg Resolution Time: {department.avgResolutionDays} days</p>
+              <p className="mt-1 text-xs text-muted">Escalations: {department.escalationCount}</p>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="surface-card p-4">

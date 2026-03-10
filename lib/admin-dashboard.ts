@@ -17,6 +17,14 @@ export type EscalationChartDatum = {
   count: number;
 };
 
+export type DepartmentScoreDatum = {
+  name: string;
+  resolutionRate: number;
+  avgResolutionDays: number;
+  escalationCount: number;
+  score: number;
+};
+
 export function pendingDurationHours(createdAt: string) {
   const created = new Date(createdAt).getTime();
   const now = Date.now();
@@ -116,4 +124,49 @@ export function computeDepartmentResolutionRates(issues: DbIssue[], departments:
       isFlagged: resolutionRate < 50,
     };
   });
+}
+
+export function computeDepartmentScores(issues: DbIssue[], escalations: DbEscalation[], departments: DbDepartment[]): DepartmentScoreDatum[] {
+  const issueBuckets = issues.reduce<Record<string, { total: number; resolved: number; resolvedHours: number[]; issueIds: string[] }>>((acc, issue) => {
+    const key = normalizeKey(issue.category);
+    const current = acc[key] ?? { total: 0, resolved: 0, resolvedHours: [], issueIds: [] };
+    current.total += 1;
+    current.issueIds.push(issue.id);
+
+    if (issue.status === "resolved") {
+      current.resolved += 1;
+      const ageHours = pendingDurationHours(issue.created_at);
+      current.resolvedHours.push(ageHours);
+    }
+
+    acc[key] = current;
+    return acc;
+  }, {});
+
+  return departments
+    .map((department) => {
+      const key = normalizeKey(department.name);
+      const bucket = issueBuckets[key] ?? { total: 0, resolved: 0, resolvedHours: [], issueIds: [] };
+      const issueIdSet = new Set(bucket.issueIds);
+      const escalationCount = escalations.filter((escalation) => issueIdSet.has(escalation.issue_id)).length;
+
+      const resolutionRate = bucket.total === 0 ? 0 : Number(((bucket.resolved / bucket.total) * 100).toFixed(1));
+      const avgResolutionHours = bucket.resolvedHours.length === 0
+        ? 0
+        : bucket.resolvedHours.reduce((sum, value) => sum + value, 0) / bucket.resolvedHours.length;
+      const avgResolutionDays = Number((avgResolutionHours / 24).toFixed(1));
+
+      const responseSpeed = Math.max(0, Math.min(100, 100 - (avgResolutionHours / 120) * 100));
+      const escalationPenaltyScore = Math.max(0, Math.min(100, 100 - escalationCount * 5));
+      const score = Number((resolutionRate * 0.5 + responseSpeed * 0.3 + escalationPenaltyScore * 0.2).toFixed(1));
+
+      return {
+        name: department.name,
+        resolutionRate,
+        avgResolutionDays,
+        escalationCount,
+        score,
+      };
+    })
+    .sort((a, b) => b.score - a.score);
 }

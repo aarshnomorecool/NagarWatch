@@ -76,6 +76,14 @@ export function IssueCard({ issue, commentCount, userVote, voteBusy, onVote, log
         </div>
         <div className="flex items-center gap-2">
           <span className="rounded-full px-2.5 py-1 text-xs font-semibold" style={getStatusBadgeStyle(issue.status)}>{statusLabel}</span>
+          {issue.status === "resolved" ? (
+            <span
+              className="rounded-full px-2.5 py-1 text-xs font-semibold"
+              style={{ color: "#075985", background: "rgba(14, 165, 233, 0.18)", border: "1px solid rgba(14, 165, 233, 0.4)" }}
+            >
+              📷 Proof
+            </span>
+          ) : null}
         </div>
       </div>
 
